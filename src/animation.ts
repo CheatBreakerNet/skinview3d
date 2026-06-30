@@ -118,10 +118,10 @@ export abstract class PlayerAnimation {
 	protected animateWings(player: PlayerObject, wingPosition: number): void {
 		player.wings.leftWing.rotation.x = -0.125 - Math.cos(wingPosition) * 0.2;
 		player.wings.leftWing.rotation.y = 0.75;
-		player.wings.leftWing.rotation.z = (Math.sin(wingPosition) + 0.125) * 0.8;
+		player.wings.leftWing.rotation.z = -((Math.sin(wingPosition) + 0.125) * 0.8);
 		const leftWingTip = player.wings.leftWing.getObjectByName("wingTip");
 		if (leftWingTip) {
-			leftWingTip.rotation.z = (Math.sin(wingPosition + 2.0) + 0.5) * 0.75;
+			leftWingTip.rotation.z = -((Math.sin(wingPosition + 2.0) + 0.5) * 0.75);
 		}
 		player.wings.updateRightWing();
 	}
@@ -163,7 +163,7 @@ export class IdleAnimation extends PlayerAnimation {
 		const basicCapeRotationX = Math.PI * 0.06;
 		player.cape.rotation.x = Math.sin(t) * 0.01 + basicCapeRotationX;
 
-		this.animateWings(player, t);
+		this.animateWings(player, this.progress * Math.PI);
 	}
 }
 
@@ -203,7 +203,7 @@ export class WalkingAnimation extends PlayerAnimation {
 		const basicCapeRotationX = Math.PI * 0.06;
 		player.cape.rotation.x = Math.sin(t / 1.5) * 0.06 + basicCapeRotationX;
 
-		this.animateWings(player, t);
+		this.animateWings(player, this.progress * Math.PI);
 	}
 }
 
@@ -238,7 +238,7 @@ export class RunningAnimation extends PlayerAnimation {
 		// What about head shaking?
 		// You shouldn't glance right and left when running dude :P
 
-		this.animateWings(player, t * 2);
+		this.animateWings(player, this.progress * Math.PI);
 	}
 }
 
@@ -268,8 +268,7 @@ export class FlyingAnimation extends PlayerAnimation {
 		player.elytra.leftWing.rotation.z = elytraRotationZ + interpolation * (0.2617994 - elytraRotationZ);
 		player.elytra.updateRightWing();
 
-		player.wings.leftWing.rotation.z = elytraRotationZ + interpolation * (0.2617994 - elytraRotationZ);
-		player.wings.updateRightWing();
+		this.animateWings(player, this.progress * Math.PI);
 	}
 }
 
@@ -478,5 +477,6 @@ export class SwimAnimation extends PlayerAnimation {
 		player.skin.rightLeg.rotation.x = rightLegX;
 		player.skin.rightLeg.rotation.y = 0.1 * toRad;
 		player.skin.rightLeg.rotation.z = 0.1 * toRad;
+		this.animateWings(player, this.progress * Math.PI);
 	}
 }
