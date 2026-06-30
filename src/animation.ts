@@ -27,14 +27,6 @@ export abstract class PlayerAnimation {
 	 */
 	progress: number = 0;
 
-	/**
-	 * Plays the animation.
-	 *
-	 * @param player - the player object
-	 * @param delta - progress difference since last call
-	 */
-	protected abstract animate(player: PlayerObject, delta: number): void;
-
 	private currentId: number = 0;
 	private progress0: Map<number, number> = new Map();
 	private animationObjects: Map<number, (player: PlayerObject, progress: number, currentId: number) => void> =
@@ -398,7 +390,6 @@ export class CrouchAnimation extends PlayerAnimation {
 		}
 	}
 }
-
 export class HitAnimation extends PlayerAnimation {
 	protected animate(player: PlayerObject): void {
 		const t = this.progress * 18;
