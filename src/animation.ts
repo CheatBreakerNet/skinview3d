@@ -2,6 +2,20 @@ import { PlayerObject } from "./model.js";
 import { Quaternion, Vector3 } from "three";
 import { easeInOutSine, easingArc } from "./utils.js";
 
+interface AnimationState {
+	/** Whether the player is crouching */
+	isCrouching: boolean;
+
+	/** Whether the player is swinging */
+	isSwinging: boolean;
+
+	/** Whether the player is jumping */
+	isJumping: boolean;
+
+	/** Delta time of the animation */
+	progress: number;
+}
+
 /**
  * An animation which can be played on a {@link PlayerObject}.
  *
@@ -29,25 +43,30 @@ export abstract class PlayerAnimation {
 	progress: number = 0;
 
 	/**
+	 * The name of the currently active animation class.
+	 */
+	protected readonly _activeAnimation: string;
+
+	/**
 	 * Plays the animation one tick.
 	 * @param player - the player object
 	 * @param delta  - scaled time elapsed since last call
 	 */
 	protected abstract animate(player: PlayerObject, delta: number): void;
 
-	/**
-	 * The name of the currently active animation class.
-	 */
-	protected readonly _activeAnimation: string;
-
 	// Disabled animations for certain states
-	protected static readonly swingDisabledAnimations: readonly string[] = ["FlyingAnimation"];
+	protected static readonly swingDisabledAnimations: readonly string[] = ["FlyingAnimation", "SwimAnimation"];
 	protected static readonly swingLeftArmDisabledAnimation: readonly string[] = ["WalkingAnimation", "RunningAnimation"];
 	protected static readonly jumpDisabledAnimations: readonly string[] = [
 		"RunningAnimation",
 		"WalkingAnimation",
 		"FlyingAnimation",
 		"SwimAnimation",
+	];
+	protected static readonly crouchDisabledAnimations: readonly string[] = [
+		"FlyingAnimation",
+		"SwimAnimation",
+		"RunningAnimation",
 	];
 
 	// Swings
@@ -63,7 +82,9 @@ export abstract class PlayerAnimation {
 	private readonly _jumpHeight: number = 10;
 	private _jumpCooldown: boolean = false;
 
-	// TODO: add crouching
+	// Crouch
+	private _crouchActive: boolean = false;
+	private _crouchWasActive: boolean = false;
 
 	private _nextId: number = 0;
 	private _addons: Map<number, (player: PlayerObject, progress: number, id: number) => void> = new Map();
@@ -140,13 +161,12 @@ export abstract class PlayerAnimation {
 		const delta = deltaTime * this.speed;
 
 		this.animate(player, delta);
+
 		this.animateJump(player, delta);
+
 		this.animateSwing(player, delta);
 
-		this._addons.forEach((fn, id) => {
-			const origin = this._addonOrigins.get(id) ?? this.progress;
-			fn(player, this.progress - origin, id);
-		});
+		this.animateCrouch(player, delta);
 
 		this.progress += delta;
 	}
@@ -250,7 +270,8 @@ export abstract class PlayerAnimation {
 
 		if (!constructor.swingLeftArmDisabledAnimation.includes(this._activeAnimation)) {
 			player.skin.leftArm.rotation.x = Math.sin(t + Math.PI) * 0.077;
-			player.skin.leftArm.rotation.z = -Math.cos(t) * 0.015 + 0.13 - 0.05;
+			// TODO: this is a little fucked, needs fixing
+			// player.skin.leftArm.rotation.z = -Math.cos(t) * 0.015 + 0.13 - 0.05;
 			player.skin.leftArm.position.z = Math.cos(t) * 0.3;
 			player.skin.leftArm.position.x = 5 - Math.cos(t) * 0.05;
 
@@ -270,6 +291,78 @@ export abstract class PlayerAnimation {
 
 			player.skin.body.rotation.y = 0;
 		}
+	}
+
+	/** Animate a player crouch */
+	playCrouch(crouch: boolean = !this._crouchActive): void {
+		const constructor = this.constructor as typeof PlayerAnimation;
+
+		if (constructor.crouchDisabledAnimations.includes(this._activeAnimation)) {
+			return;
+		}
+
+		this._crouchActive = crouch;
+	}
+
+	/** Whether a crouch animation is currently playing. */
+	get isCrouching(): boolean {
+		return this._crouchActive;
+	}
+
+	animateCrouch(player: PlayerObject, _delta: number): void {
+		// nothing to do, we're standing and we already reset the pose
+		if (!this._crouchActive && !this._crouchWasActive) return;
+
+		const s = this._crouchActive ? 1 : 0;
+
+		player.skin.body.rotation.x = 0.4537860552 * s;
+		player.skin.body.position.y = -6 - 2.103677462 * s;
+		player.skin.body.position.z = -3.4500310377 * s + 1.3256181 * s;
+
+		player.skin.head.position.y = -3.618325234674 * s;
+
+		// Legs
+		const legZ = -3.4500310377 * s;
+		player.skin.leftLeg.position.z = legZ;
+		player.skin.rightLeg.position.z = legZ;
+
+		// Arms
+		const armZ = 3.618325234674 * s - 3.4500310377 * s;
+		player.skin.leftArm.position.z = armZ;
+		player.skin.rightArm.position.z = armZ;
+
+		player.skin.leftArm.position.y = -2 - 2.53943318 * s;
+		player.skin.rightArm.position.y = player.skin.leftArm.position.y;
+
+		// Cape
+		player.cape.position.y = 8 - 1.851236166577372 * s;
+		player.cape.rotation.x = (10.8 * Math.PI) / 180 + 0.294220265771 * s;
+		player.cape.position.z = -2 + 3.786619432 * s - 3.4500310377 * s;
+
+		// Elytra
+		player.elytra.position.x = player.cape.position.x;
+		player.elytra.position.y = player.cape.position.y;
+		player.elytra.position.z = player.cape.position.z;
+		player.elytra.rotation.x = player.cape.rotation.x - (10.8 * Math.PI) / 180;
+		player.elytra.leftWing.rotation.z = 0.26179944 + 0.4582006 * s;
+		player.elytra.leftWing.rotation.y = 0.3 * s;
+		player.elytra.updateRightWing();
+
+		// Wings
+		player.wings.position.y = 8 - 1.851236166577372 * s;
+		player.wings.rotation.x = (10.8 * Math.PI) / 180 + 0.294220265771 * s;
+		player.wings.position.z = -2 + 3.786619432 * s - 3.4500310377 * s;
+
+		this._crouchWasActive = this._crouchActive;
+	}
+
+	getState(): AnimationState {
+		return {
+			isCrouching: this._crouchActive,
+			isSwinging: this._swingActive,
+			isJumping: this._jumpActive,
+			progress: this.progress,
+		};
 	}
 }
 
@@ -295,18 +388,19 @@ export class FunctionAnimation extends PlayerAnimation {
 
 export class IdleAnimation extends PlayerAnimation {
 	protected animate(player: PlayerObject): void {
+		const crouchOffset = this.isCrouching ? Math.PI - 2.8 : 0;
+
 		const t = this.progress * 2;
 
 		const sin = Math.sin(t);
 
 		// Arms
+		player.skin.leftArm.rotation.x = crouchOffset;
+		player.skin.rightArm.rotation.x = crouchOffset;
+
 		const baseArmZ = Math.PI * 0.02;
 		player.skin.leftArm.rotation.z = sin * 0.03 + baseArmZ;
 		player.skin.rightArm.rotation.z = -sin * 0.03 - baseArmZ;
-
-		// Cape
-		const capeX = Math.PI * 0.06;
-		player.cape.rotation.x = easeInOutSine((Math.sin(t) + 1) / 2) * 0.02 + capeX;
 
 		// Wings
 		this.animateWings(player, this.progress * Math.PI);
@@ -315,25 +409,24 @@ export class IdleAnimation extends PlayerAnimation {
 
 export class WalkingAnimation extends PlayerAnimation {
 	protected animate(player: PlayerObject): void {
-		const t = this.progress * 8;
+		const crouchMultiplier = this.isCrouching ? 0.6 : 1.2;
+		const crouchOffset = this.isCrouching ? Math.PI - 2.8 : 0;
+
+		const t = this.progress * (this.isCrouching ? 6 : 10);
 
 		const sin = Math.sin(t);
 
 		// Legs
-		player.skin.leftLeg.rotation.x = sin * 0.5;
-		player.skin.rightLeg.rotation.x = Math.sin(t + Math.PI) * 0.5;
+		player.skin.leftLeg.rotation.x = sin * 0.5 * crouchMultiplier;
+		player.skin.rightLeg.rotation.x = Math.sin(t + Math.PI) * 0.5 * crouchMultiplier;
 
 		// Arms
-		player.skin.leftArm.rotation.x = Math.sin(t + Math.PI) * 0.5;
-		player.skin.rightArm.rotation.x = sin * 0.5;
+		player.skin.leftArm.rotation.x = crouchOffset + Math.sin(t + Math.PI) * 0.5;
+		player.skin.rightArm.rotation.x = crouchOffset + sin * 0.5;
 
 		const baseArmZ = Math.PI * 0.02;
 		player.skin.leftArm.rotation.z = sin * 0.03 + baseArmZ;
 		player.skin.rightArm.rotation.z = -sin * 0.03 - baseArmZ;
-
-		// Cape
-		const capeX = Math.PI * 0.06;
-		player.cape.rotation.x = ((Math.sin(t / 1.5) + 1) / 2) * 0.12 + capeX - 0.06;
 
 		// Wings
 		this.animateWings(player, this.progress * Math.PI);
@@ -398,126 +491,9 @@ export class FlyingAnimation extends PlayerAnimation {
 	}
 }
 
-export class WaveAnimation extends PlayerAnimation {
-	whichArm: string;
-
-	constructor(whichArm: "left" | "right" = "left") {
-		super();
-		this.whichArm = whichArm;
-	}
-
-	protected animate(player: PlayerObject): void {
-		const t = this.progress * 2 * Math.PI * 0.5;
-
-		const targetArm = this.whichArm === "left" ? player.skin.leftArm : player.skin.rightArm;
-		targetArm.rotation.x = 180;
-		targetArm.rotation.z = Math.sin(t) * 0.5;
-	}
-}
-export class CrouchAnimation extends PlayerAnimation {
-	/**
-	 * Whether to show the progress of animation.
-	 * Because there is no progress in the crouch animation in Minecraft, the default value here is false.
-	 * @defaultValue `false`
-	 */
-	showProgress: boolean = false;
-	/**
-	 * Whether to run this animation once.
-	 *
-	 * @defaultValue `false`
-	 */
-	runOnce: boolean = false;
-
-	private isRunningHitAnimation: boolean = false;
-	private hitAnimationSpeed: number = 1;
-	/**
-	 * Add the hit animation.
-	 *
-	 * @param speed - The speed of hit animation and the default is follow the speed of CrouchAnimation.But if the speed of CrouchAnimation is 0,this animation will not run.
-	 */
-	addHitAnimation(speed: number = this.speed): void {
-		this.isRunningHitAnimation = true;
-		this.hitAnimationSpeed = speed;
-	}
-	private erp: number = 0; //elytra rotate progress
-	private isCrouched: boolean | undefined;
-	protected animate(player: PlayerObject): void {
-		let pr = this.progress * 8;
-		if (pr === 0) {
-			this.isCrouched = undefined;
-		}
-		if (this.runOnce) {
-			pr = clamp(pr, -1, 1);
-		}
-		if (!this.showProgress) {
-			pr = Math.floor(pr);
-		}
-		player.skin.body.rotation.x = 0.4537860552 * Math.abs(Math.sin((pr * Math.PI) / 2));
-		player.skin.body.position.z =
-			1.3256181 * Math.abs(Math.sin((pr * Math.PI) / 2)) - 3.4500310377 * Math.abs(Math.sin((pr * Math.PI) / 2));
-		player.skin.body.position.y = -6 - 2.103677462 * Math.abs(Math.sin((pr * Math.PI) / 2));
-		player.cape.position.y = 8 - 1.851236166577372 * Math.abs(Math.sin((pr * Math.PI) / 2));
-		player.cape.rotation.x = (10.8 * Math.PI) / 180 + 0.294220265771 * Math.abs(Math.sin((pr * Math.PI) / 2));
-		player.cape.position.z =
-			-2 + 3.786619432 * Math.abs(Math.sin((pr * Math.PI) / 2)) - 3.4500310377 * Math.abs(Math.sin((pr * Math.PI) / 2));
-		player.elytra.position.x = player.cape.position.x;
-		player.elytra.position.y = player.cape.position.y;
-		player.elytra.position.z = player.cape.position.z;
-		player.elytra.rotation.x = player.cape.rotation.x - (10.8 * Math.PI) / 180;
-		const pr1 = this.progress / this.speed;
-		if (Math.abs(Math.sin((pr * Math.PI) / 2)) === 1 || (this.showProgress && Math.floor(Math.abs(pr)) % 2 === 0)) {
-			this.erp = !this.isCrouched ? pr1 : this.erp;
-			this.isCrouched = true;
-			player.elytra.leftWing.rotation.z =
-				0.26179944 + 0.4582006 * Math.abs(Math.sin((Math.min(pr1 - this.erp, 1) * Math.PI) / 2));
-			player.elytra.leftWing.rotation.y = 0.3 * Math.abs(Math.sin((Math.min(pr1 - this.erp, 1) * Math.PI) / 2));
-			player.elytra.updateRightWing();
-		} else if (this.isCrouched !== undefined) {
-			this.erp = this.isCrouched ? pr1 : this.erp;
-			player.elytra.leftWing.rotation.z =
-				0.72 - 0.4582006 * Math.abs(Math.sin((Math.min(pr1 - this.erp, 1) * Math.PI) / 2));
-			player.elytra.leftWing.rotation.y = 0.3 - 0.3 * Math.abs(Math.sin((Math.min(pr1 - this.erp, 1) * Math.PI) / 2));
-			player.elytra.updateRightWing();
-			this.isCrouched = false;
-		}
-		player.skin.head.position.y = -3.618325234674 * Math.abs(Math.sin((pr * Math.PI) / 2));
-		player.skin.leftArm.position.z =
-			3.618325234674 * Math.abs(Math.sin((pr * Math.PI) / 2)) - 3.4500310377 * Math.abs(Math.sin((pr * Math.PI) / 2));
-		player.skin.rightArm.position.z = player.skin.leftArm.position.z;
-		player.skin.leftArm.rotation.x = 0.410367746202 * Math.abs(Math.sin((pr * Math.PI) / 2));
-		player.skin.rightArm.rotation.x = player.skin.leftArm.rotation.x;
-		player.skin.leftArm.rotation.z = 0.1;
-		player.skin.rightArm.rotation.z = -player.skin.leftArm.rotation.z;
-		player.skin.leftArm.position.y = -2 - 2.53943318 * Math.abs(Math.sin((pr * Math.PI) / 2));
-		player.skin.rightArm.position.y = player.skin.leftArm.position.y;
-		player.skin.rightLeg.position.z = -3.4500310377 * Math.abs(Math.sin((pr * Math.PI) / 2));
-		player.skin.leftLeg.position.z = player.skin.rightLeg.position.z;
-		if (this.isRunningHitAnimation) {
-			const pr2 = this.progress;
-			let t = (this.progress * 18 * this.hitAnimationSpeed) / this.speed;
-
-			if (this.speed == 0) {
-				t = 0;
-			}
-
-			const isCrouching = Math.abs(Math.sin((pr2 * Math.PI) / 2)) === 1;
-			player.skin.rightArm.rotation.x =
-				-0.4537860552 + 2 * Math.sin(t + Math.PI) * 0.3 - (isCrouching ? 0.4537860552 : 0);
-			const basicArmRotationZ = 0.01 * Math.PI + 0.06;
-			player.skin.rightArm.rotation.z = -Math.cos(t) * 0.403 + basicArmRotationZ;
-			player.skin.body.rotation.y = -Math.cos(t) * 0.06;
-			player.skin.leftArm.rotation.x = Math.sin(t + Math.PI) * 0.077 + (isCrouching ? 0.47 : 0);
-			player.skin.leftArm.rotation.z = -Math.cos(t) * 0.015 + 0.13 - (!isCrouching ? 0.05 : 0);
-			if (!isCrouching) {
-				player.skin.leftArm.position.z = Math.cos(t) * 0.3;
-				player.skin.leftArm.position.x = 5 - Math.cos(t) * 0.05;
-			}
-		}
-	}
-}
-
 export class SwimAnimation extends PlayerAnimation {
 	private lock: boolean = false;
+
 	protected animate(player: PlayerObject): void {
 		if (this.progress === 0) {
 			this.lock = false;
