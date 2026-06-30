@@ -941,6 +941,9 @@ export class SkinViewer {
 		this.canvas.removeEventListener("webglcontextlost", this.onContextLost, false);
 		this.canvas.removeEventListener("webglcontextrestored", this.onContextRestored, false);
 
+		window.removeEventListener("keydown", this.onKeyDown, false);
+		window.removeEventListener("keyup", this.onKeyUp, false);
+		
 		if (this.devicePixelRatioQuery !== null) {
 			this.devicePixelRatioQuery.removeEventListener("change", this.onDevicePixelRatioChange);
 			this.devicePixelRatioQuery = null;
