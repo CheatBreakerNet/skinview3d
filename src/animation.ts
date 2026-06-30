@@ -117,7 +117,7 @@ export abstract class PlayerAnimation {
 	 */
 	protected animateWings(player: PlayerObject, wingPosition: number): void {
 		player.wings.leftWing.rotation.x = -0.125 - Math.cos(wingPosition) * 0.2;
-		player.wings.leftWing.rotation.y = 0.75;
+		player.wings.leftWing.rotation.y = -0.75;
 		player.wings.leftWing.rotation.z = -((Math.sin(wingPosition) + 0.125) * 0.8);
 		const leftWingTip = player.wings.leftWing.getObjectByName("wingTip");
 		if (leftWingTip) {

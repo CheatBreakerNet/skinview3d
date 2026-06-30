@@ -445,13 +445,13 @@ export class WingsObject extends Group {
 		});
 
 		this.leftWing = this.createWing();
-		this.leftWing.scale.x = -1;
 		this.rightWing = this.createWing();
+		this.rightWing.scale.x = -1;
 
 		this.add(this.leftWing);
 		this.add(this.rightWing);
 
-		this.leftWing.position.x = 12;
+		this.leftWing.position.x = -12;
 		this.leftWing.position.y = -13;
 		this.leftWing.position.z = -4;
 		this.resetJoints();
