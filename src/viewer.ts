@@ -44,6 +44,7 @@
 	import { PlayerAnimation } from "./animation.js";
 	import { type BackEquipment, PlayerObject } from "./model.js";
 	import { NameTagObject } from "./nametag.js";
+import { clamp, clamp01, lerp } from "./utils.js";
 
 	export interface LoadOptions {
 		/**
@@ -304,6 +305,7 @@
 
 		readonly globalLight: AmbientLight = new AmbientLight(0xffffff, 3);
 		readonly cameraLight: PointLight = new PointLight(0xffffff, 0.6);
+		private lastCameraAzimuth: number = 0;
 
 		readonly composer: EffectComposer;
 		readonly renderPass: RenderPass;
@@ -327,21 +329,11 @@
 		private onKeyDown: (event: KeyboardEvent) => void;
 		private onMouseDown: (event: MouseEvent) => void;
 
-		// private _capeSwayEnabled: boolean = true;
-		// private _capeMaxSway: number = 0.15;
-		// private _capeStiffness: number = 8.0;
-		// private _capeDrive: number = 12.0;
-		// private capeSway: number = 0;
-
-		// private _swingActive: boolean = false
-		// private _swingTime: number = 0
-		// private _swingCooldown: boolean = false
-
-		// private _jumpActive: boolean = false;
-		// private _jumpTime: number = 0;
-		// private readonly _jumpDuration: number = 0.6;
-		// private readonly _jumpHeight: number = 10;
-		// private _jumpCooldown: boolean = false;
+		private _capeSwayEnabled: boolean = true;
+		private _capeMaxSway: number = 0.15;
+		private _capeStiffness: number = 8.0;
+		private _capeDrive: number = 12.0;
+		private capeSway: number = 0;
 
 		/**
 		 * Whether to rotate the player along the y axis.
@@ -561,9 +553,9 @@
 				}
 
 				if (event.code === "Space" && this.animation) {
-					console.log('Jump')
-					
-					this.animation.playJump()
+					console.log("Jump");
+
+					this.animation.playJump();
 				}
 			};
 
@@ -571,7 +563,7 @@
 				if (event.button === 0 && this.animation) {
 					console.log("[SkinViewer] Left click");
 
-							this.animation.playSwing();
+					this.animation.playSwing();
 				}
 			};
 
@@ -696,6 +688,29 @@
 				this.capeTexture.dispose();
 				this.capeTexture = null;
 			}
+		}
+
+		private updateCapeSway(dt: number): void {
+			if (!this._capeSwayEnabled || !this.playerObject.cape.visible) return;
+
+			const currentAzimuth = Math.atan2(this.camera.position.x, this.camera.position.z);
+
+			let azimuthDelta = currentAzimuth - this.lastCameraAzimuth;
+			if (azimuthDelta > Math.PI) azimuthDelta -= 2 * Math.PI;
+			if (azimuthDelta < -Math.PI) azimuthDelta += 2 * Math.PI;
+
+			this.lastCameraAzimuth = currentAzimuth;
+
+			const targetSway = clamp(azimuthDelta * this._capeDrive, -this._capeMaxSway, this._capeMaxSway);
+
+			const interpolationFactor = clamp01(this._capeStiffness * dt);
+			this.capeSway = clamp(
+				lerp(this.capeSway, targetSway, interpolationFactor),
+				-this._capeMaxSway,
+				this._capeMaxSway
+			);
+
+			this.playerObject.cape.rotation.z = this.capeSway;
 		}
 
 		private recreateWingsTexture(): void {
@@ -891,8 +906,12 @@
 					this.playerWrapper.rotation.y += dt * this.autoRotateSpeed;
 				}
 			}
+
+			this.updateCapeSway(dt);
 			this.controls.update();
+
 			this.render();
+
 			this.animationID = window.requestAnimationFrame(() => this.draw());
 		}
 
