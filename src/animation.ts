@@ -55,8 +55,8 @@ export abstract class PlayerAnimation {
 	protected abstract animate(player: PlayerObject, delta: number): void;
 
 	// Disabled animations for certain states
-	protected static readonly swingDisabledAnimations: readonly string[] = ["FlyingAnimation", "SwimAnimation"];
-	protected static readonly swingLeftArmDisabledAnimation: readonly string[] = ["WalkingAnimation", "RunningAnimation"];
+	protected static readonly swingDisabledAnimations: readonly string[] = ["FlyingAnimation", "SwimAnimation", "RunningAnimation"];
+	protected static readonly swingLeftArmDisabledAnimation: readonly string[] = ["WalkingAnimation"];
 	protected static readonly jumpDisabledAnimations: readonly string[] = [
 		"RunningAnimation",
 		"WalkingAnimation",

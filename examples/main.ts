@@ -1,6 +1,7 @@
 import * as skinview3d from "../src/skinview3d";
 import type { ModelType } from "skinview-utils";
 import type { BackEquipment } from "../src/model";
+
 import "./style.css";
 
 const skinParts = ["head", "body", "rightArm", "leftArm", "rightLeg", "leftLeg"];
@@ -251,10 +252,6 @@ function initializeControls(): void {
 	const controlZoom = document.getElementById("control_zoom") as HTMLInputElement;
 	const controlPan = document.getElementById("control_pan") as HTMLInputElement;
 	const animationSpeed = document.getElementById("animation_speed") as HTMLInputElement;
-	const hitSpeed = document.getElementById("hit_speed") as HTMLInputElement;
-	const hitSpeedLabel = document.getElementById("hit_speed_label");
-	const animationCrouch = document.getElementById("animation_crouch") as HTMLInputElement;
-	const addHittingAnimation = document.getElementById("add_hitting_animation") as HTMLInputElement;
 
 	canvasWidth?.addEventListener("change", e => {
 		const target = e.target as HTMLInputElement;
@@ -306,14 +303,11 @@ function initializeControls(): void {
 	for (const el of animationRadios) {
 		el.addEventListener("change", e => {
 			const target = e.target as HTMLInputElement;
-			const crouchSetting = document.getElementById("crouch_setting");
-			if (crouchSetting) {
-				crouchSetting.style.display = animationCrouch?.checked ? "block" : "none";
-			}
 
 			if (target.value === "") {
 				skinViewer.animation = null;
 			} else {
+				// @ts-ignore
 				skinViewer.animation = availableAnimations[target.value];
 				if (skinViewer.animation && animationSpeed) {
 					skinViewer.animation.speed = Number(animationSpeed.value);
@@ -322,85 +316,11 @@ function initializeControls(): void {
 		});
 	}
 
-	animationCrouch?.addEventListener("change", () => {
-		const crouchSettings = document.querySelectorAll<HTMLInputElement>(
-			'input[type="checkbox"][name="crouch_setting_item"]'
-		);
-		for (const el of crouchSettings) {
-			el.checked = false;
-		}
-		if (hitSpeed) {
-			hitSpeed.value = "";
-		}
-		if (hitSpeedLabel) {
-			hitSpeedLabel.style.display = "none";
-		}
-	});
-
-	const crouchSettings = {
-		runOnce: (value: boolean) => {
-			if (skinViewer.animation) {
-				(skinViewer.animation as unknown as { runOnce: boolean }).runOnce = value;
-			}
-		},
-		showProgress: (value: boolean) => {
-			if (skinViewer.animation) {
-				(skinViewer.animation as unknown as { showProgress: boolean }).showProgress = value;
-			}
-		},
-		addHitAnimation: (value: boolean) => {
-			if (hitSpeedLabel) {
-				hitSpeedLabel.style.display = value ? "block" : "none";
-			}
-			if (value && skinViewer.animation) {
-				const hitSpeedValue = hitSpeed?.value;
-				if (hitSpeedValue === "") {
-					(skinViewer.animation as unknown as { addHitAnimation: () => void }).addHitAnimation();
-				} else {
-					(skinViewer.animation as unknown as { addHitAnimation: (speed: string) => void }).addHitAnimation(
-						hitSpeedValue
-					);
-				}
-			}
-		},
-	};
-
-	const updateCrouchAnimation = () => {
-		skinViewer.animation = new skinview3d.CrouchAnimation();
-		if (skinViewer.animation && animationSpeed) {
-			skinViewer.animation.speed = Number(animationSpeed.value);
-		}
-		const crouchSettingItems = document.querySelectorAll<HTMLInputElement>(
-			'input[type="checkbox"][name="crouch_setting_item"]'
-		);
-		for (const el of crouchSettingItems) {
-			const setting = crouchSettings[el.value as keyof typeof crouchSettings];
-			if (setting) {
-				setting(el.checked);
-			}
-		}
-	};
-
-	const crouchSettingItems = document.querySelectorAll<HTMLInputElement>(
-		'input[type="checkbox"][name="crouch_setting_item"]'
-	);
-	for (const el of crouchSettingItems) {
-		el.addEventListener("change", () => {
-			updateCrouchAnimation();
-		});
-	}
-
-	hitSpeed?.addEventListener("change", () => {
-		updateCrouchAnimation();
-	});
-
 	animationSpeed?.addEventListener("change", e => {
 		const target = e.target as HTMLInputElement;
+
 		if (skinViewer.animation) {
 			skinViewer.animation.speed = Number(target.value);
-		}
-		if (animationCrouch?.checked && addHittingAnimation?.checked && hitSpeed?.value === "") {
-			updateCrouchAnimation();
 		}
 	});
 
@@ -426,6 +346,7 @@ function initializeControls(): void {
 			);
 			checkbox?.addEventListener("change", e => {
 				const target = e.target as HTMLInputElement;
+				// @ts-ignore
 				skinViewer.playerObject.skin[part][layer].visible = target.checked;
 			});
 		}
@@ -503,6 +424,7 @@ function initializeControls(): void {
 	}
 
 	const resetAll = document.getElementById("reset_all");
+
 	resetAll?.addEventListener("click", () => {
 		skinViewer.dispose();
 		initializeViewer();
@@ -539,6 +461,8 @@ function initializeViewer(): void {
 		canvas: skinContainer,
 	});
 
+	skinViewer.enableShadow();
+
 	const canvasWidth = document.getElementById("canvas_width") as HTMLInputElement;
 	const canvasHeight = document.getElementById("canvas_height") as HTMLInputElement;
 	const fov = document.getElementById("fov") as HTMLInputElement;
@@ -564,7 +488,9 @@ function initializeViewer(): void {
 	const animationRadio = document.querySelector<HTMLInputElement>('input[type="radio"][name="animation"]:checked');
 	const animationName = animationRadio?.value;
 	if (animationName) {
+		// @ts-ignore
 		skinViewer.animation = availableAnimations[animationName];
+
 		if (skinViewer.animation && animationSpeed) {
 			skinViewer.animation.speed = Number(animationSpeed.value);
 		}
@@ -579,6 +505,8 @@ function initializeViewer(): void {
 			const checkbox = document.querySelector<HTMLInputElement>(
 				`#layers_table input[type="checkbox"][data-part="${part}"][data-layer="${layer}"]`
 			);
+
+			// @ts-ignore
 			skinViewer.playerObject.skin[part][layer].visible = checkbox?.checked ?? false;
 		}
 	}

@@ -34,6 +34,11 @@ import {
 	ColorManagement,
 	CubeTexture,
 	CubeReflectionMapping,
+	Mesh,
+	CircleGeometry,
+	MeshBasicMaterial,
+	DoubleSide,
+	FrontSide,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
@@ -337,6 +342,9 @@ export class SkinViewer {
 	private _capeDrive: number = 12.0;
 	private capeSway: number = 0;
 
+	private shadowMesh: Mesh | null = null;
+	private shadowEnabled = false;
+
 	/**
 	 * Whether to rotate the player along the y axis.
 	 *
@@ -554,13 +562,13 @@ export class SkinViewer {
 				console.log(`[SkinViewer] Key pressed: ${event.code}`);
 			}
 
-				if (event.code === "Space" && this.animation) {
-					this.animation.playJump();
-				}
+			if (event.code === "Space" && this.animation) {
+				this.animation.playJump();
+			}
 
-				if (event.code === "ShiftLeft" && this.animation) {
-					this.animation.playCrouch(true);
-				}
+			if (event.code === "ShiftLeft" && this.animation) {
+				this.animation.playCrouch(true);
+			}
 		};
 
 		this.onKeyUp = (event: KeyboardEvent) => {
@@ -897,6 +905,40 @@ export class SkinViewer {
 			return loadImage(source).then(image => this.loadBackground(image, mapping));
 		}
 	}
+
+	enableShadow(): void {
+		if (this.shadowEnabled) return;
+
+		this.shadowEnabled = true;
+
+		if (!this.shadowMesh) {
+			const geometry = new CircleGeometry(6, 24);
+
+			const material = new MeshBasicMaterial({
+				color: 0x000000,
+				transparent: true,
+				opacity: 0.5,
+				depthWrite: false,
+				side: FrontSide,
+			});
+
+			this.shadowMesh = new Mesh(geometry, material);
+
+			this.shadowMesh.rotation.x = -Math.PI / 2;
+			this.shadowMesh.position.y = -16;
+		}
+
+		this.scene.add(this.shadowMesh);
+	}
+
+	disableShadow(): void {
+		if (!this.shadowMesh) return;
+
+		this.scene.remove(this.shadowMesh);
+		
+		this.shadowEnabled = false;
+	}
+
 	private draw(): void {
 		const dt = this.clock.getDelta();
 		if (this._animation !== null) {
@@ -943,7 +985,7 @@ export class SkinViewer {
 
 		window.removeEventListener("keydown", this.onKeyDown, false);
 		window.removeEventListener("keyup", this.onKeyUp, false);
-		
+
 		if (this.devicePixelRatioQuery !== null) {
 			this.devicePixelRatioQuery.removeEventListener("change", this.onDevicePixelRatioChange);
 			this.devicePixelRatioQuery = null;
