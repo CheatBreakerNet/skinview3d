@@ -110,6 +110,29 @@ export abstract class PlayerAnimation {
 			this.progress0.delete(id);
 		}
 	}
+
+	/**
+	 * Subclasses must implement this to update the player state.
+	 * @param player - The player object.
+	 * @param delta - Progress difference since last call.
+	 */
+	protected abstract animate(player: PlayerObject, delta: number): void;
+
+	/**
+	 * Animate the dragon wings using the client's math.
+	 * @param player - The player object.
+	 * @param wingPosition - The animation position/time.
+	 */
+	protected animateWings(player: PlayerObject, wingPosition: number): void {
+		player.wings.leftWing.rotation.x = -0.125 - Math.cos(wingPosition) * 0.2;
+		player.wings.leftWing.rotation.y = 0.75;
+		player.wings.leftWing.rotation.z = (Math.sin(wingPosition) + 0.125) * 0.8;
+		const leftWingTip = player.wings.leftWing.getObjectByName("wingTip");
+		if (leftWingTip) {
+			leftWingTip.rotation.z = (Math.sin(wingPosition + 2.0) + 0.5) * 0.75;
+		}
+		player.wings.updateRightWing();
+	}
 }
 
 /**
@@ -147,6 +170,8 @@ export class IdleAnimation extends PlayerAnimation {
 		// Always add an angle for cape around the x axis
 		const basicCapeRotationX = Math.PI * 0.06;
 		player.cape.rotation.x = Math.sin(t) * 0.01 + basicCapeRotationX;
+
+		this.animateWings(player, t);
 	}
 }
 
@@ -185,6 +210,8 @@ export class WalkingAnimation extends PlayerAnimation {
 		// Always add an angle for cape around the x axis
 		const basicCapeRotationX = Math.PI * 0.06;
 		player.cape.rotation.x = Math.sin(t / 1.5) * 0.06 + basicCapeRotationX;
+
+		this.animateWings(player, t);
 	}
 }
 
@@ -218,6 +245,8 @@ export class RunningAnimation extends PlayerAnimation {
 
 		// What about head shaking?
 		// You shouldn't glance right and left when running dude :P
+
+		this.animateWings(player, t * 2);
 	}
 }
 
@@ -246,6 +275,9 @@ export class FlyingAnimation extends PlayerAnimation {
 		player.elytra.leftWing.rotation.x = elytraRotationX + interpolation * (0.2617994 - elytraRotationX);
 		player.elytra.leftWing.rotation.z = elytraRotationZ + interpolation * (0.2617994 - elytraRotationZ);
 		player.elytra.updateRightWing();
+
+		player.wings.leftWing.rotation.z = elytraRotationZ + interpolation * (0.2617994 - elytraRotationZ);
+		player.wings.updateRightWing();
 	}
 }
 
@@ -366,6 +398,7 @@ export class CrouchAnimation extends PlayerAnimation {
 		}
 	}
 }
+
 export class HitAnimation extends PlayerAnimation {
 	protected animate(player: PlayerObject): void {
 		const t = this.progress * 18;

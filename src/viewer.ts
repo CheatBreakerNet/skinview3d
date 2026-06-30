@@ -86,6 +86,17 @@ export interface CapeLoadOptions extends LoadOptions {
 	backEquipment?: BackEquipment;
 }
 
+export interface WingsRenderOptions extends LoadOptions {
+	/**
+	 * The equipment (`"wings"`) to show when the wings texture is loaded.
+	 *
+	 * If `makeVisible` is set to false, this option will have no effect.
+	 *
+	 * @defaultValue `"wings"`
+	 */
+	backEquipment?: BackEquipment;
+}
+
 export interface EarsLoadOptions extends LoadOptions {
 	/**
 	 * The type of the provided ear texture.
@@ -150,6 +161,13 @@ export interface SkinViewerOptions {
 	 * @defaultValue If unspecified, the cape will be invisible.
 	 */
 	cape?: RemoteImage | TextureSource;
+
+	/**
+	 * The wings texture of the player.
+	 *
+	 * @defaultValue If unspecified, the wings will be invisible.
+	 */
+	wings?: RemoteImage | TextureSource;
 
 	/**
 	 * The ear texture of the player.
@@ -292,9 +310,11 @@ export class SkinViewer {
 	readonly skinCanvas: HTMLCanvasElement;
 	readonly capeCanvas: HTMLCanvasElement;
 	readonly earsCanvas: HTMLCanvasElement;
+	readonly wingsCanvas: HTMLCanvasElement;
 	private skinTexture: Texture | null = null;
 	private capeTexture: Texture | null = null;
 	private earsTexture: Texture | null = null;
+	private wingsTexture: Texture | null = null;
 	private backgroundTexture: Texture | null = null;
 
 	private _disposed: boolean = false;
@@ -337,6 +357,7 @@ export class SkinViewer {
 		this.skinCanvas = document.createElement("canvas");
 		this.capeCanvas = document.createElement("canvas");
 		this.earsCanvas = document.createElement("canvas");
+		this.wingsCanvas = document.createElement("canvas");
 
 		this.scene = new Scene();
 		this.camera = new PerspectiveCamera();
@@ -411,6 +432,9 @@ export class SkinViewer {
 		}
 		if (options.cape !== undefined) {
 			this.loadCape(options.cape);
+		}
+		if (options.wings !== undefined) {
+			this.loadWings(options.wings);
 		}
 		if (options.ears !== undefined && options.ears !== "current-skin") {
 			this.loadEars(options.ears.source, {
@@ -612,6 +636,52 @@ export class SkinViewer {
 		if (this.capeTexture !== null) {
 			this.capeTexture.dispose();
 			this.capeTexture = null;
+		}
+	}
+
+	private recreateWingsTexture(): void {
+		if (this.wingsTexture !== null) {
+			this.wingsTexture.dispose();
+		}
+		this.wingsTexture = new CanvasTexture(this.wingsCanvas);
+		this.wingsTexture.magFilter = NearestFilter;
+		this.wingsTexture.minFilter = NearestFilter;
+		this.playerObject.wings.map = this.wingsTexture;
+	}
+
+	loadWings(empty: null): void;
+	loadWings<S extends TextureSource | RemoteImage>(
+		source: S,
+		options?: WingsRenderOptions
+	): S extends TextureSource ? void : Promise<void>;
+
+	loadWings(source: TextureSource | RemoteImage | null, options: WingsRenderOptions = {}): void | Promise<void> {
+		if (source === null) {
+			this.resetWings();
+		} else if (isTextureSource(source)) {
+			const ctx = this.wingsCanvas.getContext("2d");
+			if (ctx) {
+				this.wingsCanvas.width = source.width;
+				this.wingsCanvas.height = source.height;
+				ctx.clearRect(0, 0, source.width, source.height);
+				ctx.drawImage(source, 0, 0);
+			}
+			this.recreateWingsTexture();
+
+			if (options.makeVisible !== false) {
+				this.playerObject.backEquipment = options.backEquipment === undefined ? "wings" : options.backEquipment;
+			}
+		} else {
+			return loadImage(source).then(image => this.loadWings(image, options));
+		}
+	}
+
+	resetWings(): void {
+		this.playerObject.backEquipment = null;
+		this.playerObject.wings.map = null;
+		if (this.wingsTexture !== null) {
+			this.wingsTexture.dispose();
+			this.wingsTexture = null;
 		}
 	}
 

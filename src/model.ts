@@ -431,6 +431,101 @@ export class ElytraObject extends Group {
 	}
 }
 
+export class WingsObject extends Group {
+	readonly leftWing: Group;
+	readonly rightWing: Group;
+	private material: MeshStandardMaterial;
+
+	constructor() {
+		super();
+		this.material = new MeshStandardMaterial({
+			side: DoubleSide,
+			transparent: true,
+			alphaTest: 1e-5,
+		});
+
+		this.leftWing = this.createWing();
+		this.leftWing.scale.x = -1;
+		this.rightWing = this.createWing();
+
+		this.add(this.leftWing);
+		this.add(this.rightWing);
+
+		this.leftWing.position.x = 12;
+		this.leftWing.position.y = -13;
+		this.leftWing.position.z = -4;
+		this.resetJoints();
+	}
+
+	private createWing(): Group {
+		const wingGroup = new Group();
+		wingGroup.rotation.order = "ZYX";
+
+		const wingBoneBox = new BoxGeometry(56, 8, 8);
+		setUVs(wingBoneBox, 112, 88, 56, 8, 8, 256, 256);
+		const wingBone = new Mesh(wingBoneBox, this.material);
+		wingBone.position.set(-28, 0, 0);
+
+		const wingSkinBox = new BoxGeometry(56, 0, 56);
+		setUVs(wingSkinBox, -56, 88, 56, 0, 56, 256, 256);
+		const wingSkin = new Mesh(wingSkinBox, this.material);
+		wingSkin.position.set(-28, 0, -30);
+
+		wingGroup.add(wingBone, wingSkin);
+
+		const wingTipGroup = new Group();
+		wingTipGroup.name = "wingTip";
+		wingTipGroup.rotation.order = "ZYX";
+		wingTipGroup.position.set(-56, 0, 0);
+
+		const wingtipBoneBox = new BoxGeometry(56, 4, 4);
+		setUVs(wingtipBoneBox, 112, 136, 56, 4, 4, 256, 256);
+		const wingtipBone = new Mesh(wingtipBoneBox, this.material);
+		wingtipBone.position.set(-28, 0, 0);
+
+		const wingtipSkinBox = new BoxGeometry(56, 0, 56);
+		setUVs(wingtipSkinBox, -56, 144, 56, 0, 56, 256, 256);
+		const wingtipSkin = new Mesh(wingtipSkinBox, this.material);
+		wingtipSkin.position.set(-28, 0, -30);
+
+		wingTipGroup.add(wingtipBone, wingtipSkin);
+		wingGroup.add(wingTipGroup);
+
+		wingGroup.position.set(-12, -5, -2);
+		return wingGroup;
+	}
+
+	resetJoints(): void {
+		this.leftWing.rotation.x = -0.325;
+		this.leftWing.rotation.y = 0.01;
+		this.leftWing.rotation.z = 0.1;
+		this.updateRightWing();
+	}
+
+	updateRightWing(): void {
+		this.rightWing.position.x = -this.leftWing.position.x;
+		this.rightWing.position.y = this.leftWing.position.y;
+		this.rightWing.rotation.x = this.leftWing.rotation.x;
+		this.rightWing.rotation.y = -this.leftWing.rotation.y;
+		this.rightWing.rotation.z = -this.leftWing.rotation.z;
+
+		const leftWingTip = this.leftWing.getObjectByName("wingTip");
+		const rightWingTip = this.rightWing.getObjectByName("wingTip");
+		if (leftWingTip && rightWingTip) {
+			rightWingTip.rotation.z = leftWingTip.rotation.z;
+		}
+	}
+
+	get map(): Texture | null {
+		return this.material.map;
+	}
+
+	set map(newMap: Texture | null) {
+		this.material.map = newMap;
+		this.material.needsUpdate = true;
+	}
+}
+
 export class EarsObject extends Group {
 	readonly rightEar: Mesh;
 	readonly leftEar: Mesh;
@@ -467,7 +562,7 @@ export class EarsObject extends Group {
 	}
 }
 
-export type BackEquipment = "cape" | "elytra";
+export type BackEquipment = "cape" | "elytra" | "wings";
 
 const CapeDefaultAngle = (10.8 * Math.PI) / 180;
 
@@ -475,6 +570,7 @@ export class PlayerObject extends Group {
 	readonly skin: SkinObject;
 	readonly cape: CapeObject;
 	readonly elytra: ElytraObject;
+	readonly wings: WingsObject;
 	readonly ears: EarsObject;
 
 	constructor() {
@@ -500,6 +596,15 @@ export class PlayerObject extends Group {
 		this.elytra.visible = false;
 		this.add(this.elytra);
 
+		this.wings = new WingsObject();
+		this.wings.name = "wings";
+		this.wings.position.y = 8;
+		this.wings.position.z = -2;
+		this.wings.scale.set(0.12, 0.12, 0.12);
+		this.wings.rotation.x = 0.2617994;
+		this.wings.visible = false;
+		this.add(this.wings);
+
 		this.ears = new EarsObject();
 		this.ears.name = "ears";
 		this.ears.position.y = 10;
@@ -513,6 +618,8 @@ export class PlayerObject extends Group {
 			return "cape";
 		} else if (this.elytra.visible) {
 			return "elytra";
+		} else if (this.wings.visible) {
+			return "wings";
 		} else {
 			return null;
 		}
@@ -521,16 +628,23 @@ export class PlayerObject extends Group {
 	set backEquipment(value: BackEquipment | null) {
 		this.cape.visible = value === "cape";
 		this.elytra.visible = value === "elytra";
+		this.wings.visible = value === "wings";
 	}
 
 	resetJoints(): void {
 		this.skin.resetJoints();
 		this.cape.rotation.x = CapeDefaultAngle;
+		this.cape.rotation.y = 0;
+		this.cape.rotation.z = 0;
 		this.cape.position.y = 8;
 		this.cape.position.z = -2;
 		this.elytra.position.y = 8;
 		this.elytra.position.z = -2;
 		this.elytra.rotation.x = 0;
 		this.elytra.resetJoints();
+		this.wings.position.y = 8;
+		this.wings.position.z = -2;
+		this.wings.rotation.x = 0.2617994;
+		this.wings.resetJoints();
 	}
 }
