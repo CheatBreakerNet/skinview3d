@@ -37,7 +37,6 @@ import {
 	Mesh,
 	CircleGeometry,
 	MeshBasicMaterial,
-	DoubleSide,
 	FrontSide,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
