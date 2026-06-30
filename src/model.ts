@@ -434,10 +434,12 @@ export class ElytraObject extends Group {
 export class WingsObject extends Group {
 	readonly leftWing: Group;
 	readonly rightWing: Group;
+
 	private material: MeshStandardMaterial;
 
 	constructor() {
 		super();
+
 		this.material = new MeshStandardMaterial({
 			side: DoubleSide,
 			transparent: true,
@@ -511,6 +513,7 @@ export class WingsObject extends Group {
 
 		const leftWingTip = this.leftWing.getObjectByName("wingTip");
 		const rightWingTip = this.rightWing.getObjectByName("wingTip");
+		
 		if (leftWingTip && rightWingTip) {
 			rightWingTip.rotation.z = leftWingTip.rotation.z;
 		}

@@ -1,5 +1,6 @@
 import { PlayerObject } from "./model.js";
 import { Quaternion, Vector3 } from "three";
+import { easeInOutSine, easingArc } from "./utils.js";
 
 /**
  * An animation which can be played on a {@link PlayerObject}.
@@ -27,33 +28,51 @@ export abstract class PlayerAnimation {
 	 */
 	progress: number = 0;
 
-	private currentId: number = 0;
-	private progress0: Map<number, number> = new Map();
-	private animationObjects: Map<number, (player: PlayerObject, progress: number, currentId: number) => void> =
-		new Map();
 	/**
-	 * Plays the animation, and update the progress.
-	 *
-	 * The elapsed time `deltaTime` will be scaled by {@link speed}.
-	 * If {@link paused} is `true`, this method will do nothing.
-	 *
+	 * Plays the animation one tick.
 	 * @param player - the player object
-	 * @param deltaTime - time elapsed since last call
+	 * @param delta  - scaled time elapsed since last call
 	 */
-	update(player: PlayerObject, deltaTime: number): void {
-		if (this.paused) {
-			return;
-		}
-		const delta = deltaTime * this.speed;
-		this.animate(player, delta);
-		this.animationObjects.forEach(
-			(animation: (player: PlayerObject, progress: number, currentId: number) => void, id: number) => {
-				const progress0: number = this.progress0.get(id) as number;
-				animation(player, this.progress - progress0, id);
-			}
-		);
-		this.progress += delta;
+	protected abstract animate(player: PlayerObject, delta: number): void;
+
+	/**
+	 * The name of the currently active animation class.
+	 */
+	protected readonly _activeAnimation: string;
+
+	// Disabled animations for certain states
+	protected static readonly swingDisabledAnimations: readonly string[] = ["FlyingAnimation"];
+	protected static readonly swingLeftArmDisabledAnimation: readonly string[] = ["WalkingAnimation", "RunningAnimation"];
+	protected static readonly jumpDisabledAnimations: readonly string[] = [
+		"RunningAnimation",
+		"WalkingAnimation",
+		"FlyingAnimation",
+		"SwimAnimation",
+	];
+
+	// Swings
+	private _swingActive: boolean = false;
+	private _swingTime: number = 0;
+	private readonly _swingDuration: number = (2 * Math.PI) / 24;
+	private _swingCooldown: boolean = false;
+
+	// Jump
+	private _jumpActive: boolean = false;
+	private _jumpTime: number = 0;
+	private readonly _jumpDuration: number = 0.6;
+	private readonly _jumpHeight: number = 10;
+	private _jumpCooldown: boolean = false;
+
+	// TODO: add crouching
+
+	private _nextId: number = 0;
+	private _addons: Map<number, (player: PlayerObject, progress: number, id: number) => void> = new Map();
+	private _addonOrigins: Map<number, number> = new Map();
+
+	constructor() {
+		this._activeAnimation = this.constructor.name;
 	}
+
 	/**
 	 * Adds a new animation based on the original animation and returns its id.
 	 *
@@ -67,12 +86,15 @@ export abstract class PlayerAnimation {
 	 * skinViewer.animation.addAnimation((player, progress)=>player.rotation.y = progress);
 	 * ```
 	 */
-	addAnimation(fn: (player: PlayerObject, progress: number, currentId: number) => void): number {
-		const id = this.currentId++;
-		this.progress0.set(id, this.progress);
-		this.animationObjects.set(id, fn);
+	addAnimation(fn: (player: PlayerObject, progress: number, id: number) => void): number {
+		const id = this._nextId++;
+
+		this._addonOrigins.set(id, this.progress);
+		this._addons.set(id, fn);
+
 		return id;
 	}
+
 	/**
 	 * Removes an animation created by the addAnimation method by its id.
 	 *
@@ -97,18 +119,37 @@ export abstract class PlayerAnimation {
 	 * ```
 	 */
 	removeAnimation(id: number | undefined): void {
-		if (id != undefined) {
-			this.animationObjects.delete(id);
-			this.progress0.delete(id);
+		if (id !== undefined) {
+			this._addons.delete(id);
+			this._addonOrigins.delete(id);
 		}
 	}
 
 	/**
-	 * Subclasses must implement this to update the player state.
-	 * @param player - The player object.
-	 * @param delta - Progress difference since last call.
+	 * Plays the animation, and update the progress.
+	 *
+	 * The elapsed time `deltaTime` will be scaled by {@link speed}.
+	 * If {@link paused} is `true`, this method will do nothing.
+	 *
+	 * @param player - the player object
+	 * @param deltaTime - time elapsed since last call
 	 */
-	protected abstract animate(player: PlayerObject, delta: number): void;
+	update(player: PlayerObject, deltaTime: number): void {
+		if (this.paused) return;
+
+		const delta = deltaTime * this.speed;
+
+		this.animate(player, delta);
+		this.animateJump(player, delta);
+		this.animateSwing(player, delta);
+
+		this._addons.forEach((fn, id) => {
+			const origin = this._addonOrigins.get(id) ?? this.progress;
+			fn(player, this.progress - origin, id);
+		});
+
+		this.progress += delta;
+	}
 
 	/**
 	 * Animate the dragon wings using the client's math.
@@ -119,29 +160,132 @@ export abstract class PlayerAnimation {
 		player.wings.leftWing.rotation.x = -0.125 - Math.cos(wingPosition) * 0.2;
 		player.wings.leftWing.rotation.y = -0.75;
 		player.wings.leftWing.rotation.z = -((Math.sin(wingPosition) + 0.125) * 0.8);
+
 		const leftWingTip = player.wings.leftWing.getObjectByName("wingTip");
 		if (leftWingTip) {
 			leftWingTip.rotation.z = -((Math.sin(wingPosition + 2.0) + 0.5) * 0.75);
 		}
+
 		player.wings.updateRightWing();
+	}
+
+	/** Animate a player jump */
+	playJump(): void {
+		const constructor = this.constructor as typeof PlayerAnimation;
+
+		if (constructor.jumpDisabledAnimations.includes(this._activeAnimation)) {
+			return;
+		}
+
+		if (!this._jumpActive && !this._jumpCooldown) {
+			this._jumpActive = true;
+			this._jumpTime = 0;
+			this._jumpCooldown = true;
+		}
+	}
+
+	/** Whether a jump animation is currently playing. */
+	get isJumping(): boolean {
+		return this._jumpActive;
+	}
+
+	/**
+	 * Animates a single jump.
+	 * @param player - The player object.
+	 * @param delta - Scaled time elapsed since last call.
+	 */
+	animateJump(player: PlayerObject, delta: number): void {
+		if (!this._jumpActive) return;
+
+		this._jumpTime += delta;
+		const t = this._jumpTime / this._jumpDuration;
+
+		if (t >= 1) {
+			this._jumpActive = false;
+			this._jumpCooldown = false;
+			this._jumpTime = 0;
+			player.position.y = 0;
+		} else {
+			player.position.y = easingArc(t, this._jumpHeight, easeInOutSine);
+		}
+	}
+
+	/** Animate a player swing */
+	playSwing(): void {
+		const constructor = this.constructor as typeof PlayerAnimation;
+
+		if (constructor.swingDisabledAnimations.includes(this._activeAnimation)) {
+			return;
+		}
+
+		if (!this._swingActive && !this._swingCooldown) {
+			this._swingActive = true;
+			this._swingTime = 0;
+			this._swingCooldown = true;
+		}
+	}
+
+	/** Whether a swing animation is currently playing. */
+	get isSwinging(): boolean {
+		return this._swingActive;
+	}
+
+	animateSwing(player: PlayerObject, delta: number): void {
+		if (!this._swingActive) return;
+
+		this._swingTime += delta;
+		const t = this._swingTime * 20;
+
+		// Right Arm
+		const basicArmRotationZ = 0.01 * Math.PI + 0.06;
+
+		player.skin.rightArm.rotation.x = -0.4537860552 * 2 + 2 * Math.sin(t + Math.PI) * 0.3;
+		player.skin.rightArm.rotation.z = -Math.cos(t) * 0.403 + basicArmRotationZ;
+
+		// Body
+		player.skin.body.rotation.y = -Math.cos(t) * 0.06;
+
+		// Left Arm
+		const constructor = this.constructor as typeof PlayerAnimation;
+
+		if (!constructor.swingLeftArmDisabledAnimation.includes(this._activeAnimation)) {
+			player.skin.leftArm.rotation.x = Math.sin(t + Math.PI) * 0.077;
+			player.skin.leftArm.rotation.z = -Math.cos(t) * 0.015 + 0.13 - 0.05;
+			player.skin.leftArm.position.z = Math.cos(t) * 0.3;
+			player.skin.leftArm.position.x = 5 - Math.cos(t) * 0.05;
+
+			if (this._swingTime >= this._swingDuration) {
+				player.skin.leftArm.rotation.x = 0;
+				player.skin.leftArm.rotation.z = 0;
+			}
+		}
+
+		if (this._swingTime >= this._swingDuration) {
+			this._swingActive = false;
+			this._swingCooldown = false;
+			this._swingTime = 0;
+
+			player.skin.rightArm.rotation.x = 0;
+			player.skin.rightArm.rotation.z = 0;
+
+			player.skin.body.rotation.y = 0;
+		}
 	}
 }
 
 /**
- * A class that helps you create an animation from a function.
+ * Wraps a plain function as a {@link PlayerAnimation}.
  *
  * @example
- * To create an animation that rotates the player:
- * ```
- * new FunctionAnimation((player, progress) => player.rotation.y = progress)
+ * ```ts
+ * new FunctionAnimation((player, progress) => {
+ *   player.rotation.y = progress;
+ * })
  * ```
  */
 export class FunctionAnimation extends PlayerAnimation {
-	fn: (player: PlayerObject, progress: number, delta: number) => void;
-
-	constructor(fn: (player: PlayerObject, progress: number, delta: number) => void) {
+	constructor(private readonly fn: (player: PlayerObject, progress: number, delta: number) => void) {
 		super();
-		this.fn = fn;
 	}
 
 	protected animate(player: PlayerObject, delta: number): void {
@@ -151,87 +295,69 @@ export class FunctionAnimation extends PlayerAnimation {
 
 export class IdleAnimation extends PlayerAnimation {
 	protected animate(player: PlayerObject): void {
-		// Multiply by animation's natural speed
 		const t = this.progress * 2;
 
-		// Arm swing
-		const basicArmRotationZ = Math.PI * 0.02;
-		player.skin.leftArm.rotation.z = Math.cos(t) * 0.03 + basicArmRotationZ;
-		player.skin.rightArm.rotation.z = Math.cos(t + Math.PI) * 0.03 - basicArmRotationZ;
+		const sin = Math.sin(t);
 
-		// Always add an angle for cape around the x axis
-		const basicCapeRotationX = Math.PI * 0.06;
-		player.cape.rotation.x = Math.sin(t) * 0.01 + basicCapeRotationX;
+		// Arms
+		const baseArmZ = Math.PI * 0.02;
+		player.skin.leftArm.rotation.z = sin * 0.03 + baseArmZ;
+		player.skin.rightArm.rotation.z = -sin * 0.03 - baseArmZ;
 
+		// Cape
+		const capeX = Math.PI * 0.06;
+		player.cape.rotation.x = easeInOutSine((Math.sin(t) + 1) / 2) * 0.02 + capeX;
+
+		// Wings
 		this.animateWings(player, this.progress * Math.PI);
 	}
 }
 
 export class WalkingAnimation extends PlayerAnimation {
-	/**
-	 * Whether to shake head when walking.
-	 *
-	 * @defaultValue `true`
-	 */
-	headBobbing: boolean = true;
-
 	protected animate(player: PlayerObject): void {
-		// Multiply by animation's natural speed
 		const t = this.progress * 8;
 
-		// Leg swing
-		player.skin.leftLeg.rotation.x = Math.sin(t) * 0.5;
+		const sin = Math.sin(t);
+
+		// Legs
+		player.skin.leftLeg.rotation.x = sin * 0.5;
 		player.skin.rightLeg.rotation.x = Math.sin(t + Math.PI) * 0.5;
 
-		// Arm swing
+		// Arms
 		player.skin.leftArm.rotation.x = Math.sin(t + Math.PI) * 0.5;
-		player.skin.rightArm.rotation.x = Math.sin(t) * 0.5;
-		const basicArmRotationZ = Math.PI * 0.02;
-		player.skin.leftArm.rotation.z = Math.cos(t) * 0.03 + basicArmRotationZ;
-		player.skin.rightArm.rotation.z = Math.cos(t + Math.PI) * 0.03 - basicArmRotationZ;
+		player.skin.rightArm.rotation.x = sin * 0.5;
 
-		if (this.headBobbing) {
-			// Head shaking with different frequency & amplitude
-			player.skin.head.rotation.y = Math.sin(t / 4) * 0.2;
-			player.skin.head.rotation.x = Math.sin(t / 5) * 0.1;
-		} else {
-			player.skin.head.rotation.y = 0;
-			player.skin.head.rotation.x = 0;
-		}
+		const baseArmZ = Math.PI * 0.02;
+		player.skin.leftArm.rotation.z = sin * 0.03 + baseArmZ;
+		player.skin.rightArm.rotation.z = -sin * 0.03 - baseArmZ;
 
-		// Always add an angle for cape around the x axis
-		const basicCapeRotationX = Math.PI * 0.06;
-		player.cape.rotation.x = Math.sin(t / 1.5) * 0.06 + basicCapeRotationX;
+		// Cape
+		const capeX = Math.PI * 0.06;
+		player.cape.rotation.x = ((Math.sin(t / 1.5) + 1) / 2) * 0.12 + capeX - 0.06;
 
+		// Wings
 		this.animateWings(player, this.progress * Math.PI);
 	}
 }
 
 export class RunningAnimation extends PlayerAnimation {
 	protected animate(player: PlayerObject): void {
-		// Multiply by animation's natural speed
-		const t = this.progress * 15 + Math.PI * 0.5;
+		const t = this.progress * 12;
 
-		// Leg swing with larger amplitude
-		player.skin.leftLeg.rotation.x = Math.cos(t + Math.PI) * 1.3;
-		player.skin.rightLeg.rotation.x = Math.cos(t) * 1.3;
+		const sin = Math.sin(t);
 
-		// Arm swing
-		player.skin.leftArm.rotation.x = Math.cos(t) * 1.5;
-		player.skin.rightArm.rotation.x = Math.cos(t + Math.PI) * 1.5;
-		const basicArmRotationZ = Math.PI * 0.1;
-		player.skin.leftArm.rotation.z = Math.cos(t) * 0.1 + basicArmRotationZ;
-		player.skin.rightArm.rotation.z = Math.cos(t + Math.PI) * 0.1 - basicArmRotationZ;
+		// Legs
+		player.skin.leftLeg.rotation.x = sin * 1.3;
+		player.skin.rightLeg.rotation.x = Math.sin(t + Math.PI) * 1.3;
 
-		// Jumping
-		player.position.y = Math.cos(t * 2);
-		// Dodging when running
-		player.position.x = Math.cos(t) * 0.15;
-		// Slightly tilting when running
-		player.rotation.z = Math.cos(t + Math.PI) * 0.01;
-		// Apply higher swing frequency, lower amplitude,
-		// and greater basic rotation around x axis,
-		// to cape when running.
+		// Arms
+		player.skin.leftArm.rotation.x = Math.sin(t + Math.PI) * 1.5;
+		player.skin.rightArm.rotation.x = sin * 1.5;
+
+		const baseArmZ = Math.PI * 0.02;
+		player.skin.leftArm.rotation.z = sin * 0.03 + baseArmZ;
+		player.skin.rightArm.rotation.z = -sin * 0.03 - baseArmZ;
+
 		const basicCapeRotationX = Math.PI * 0.3;
 		player.cape.rotation.x = Math.sin(t * 2) * 0.1 + basicCapeRotationX;
 
@@ -387,19 +513,6 @@ export class CrouchAnimation extends PlayerAnimation {
 				player.skin.leftArm.position.x = 5 - Math.cos(t) * 0.05;
 			}
 		}
-	}
-}
-export class HitAnimation extends PlayerAnimation {
-	protected animate(player: PlayerObject): void {
-		const t = this.progress * 18;
-		player.skin.rightArm.rotation.x = -0.4537860552 * 2 + 2 * Math.sin(t + Math.PI) * 0.3;
-		const basicArmRotationZ = 0.01 * Math.PI + 0.06;
-		player.skin.rightArm.rotation.z = -Math.cos(t) * 0.403 + basicArmRotationZ;
-		player.skin.body.rotation.y = -Math.cos(t) * 0.06;
-		player.skin.leftArm.rotation.x = Math.sin(t + Math.PI) * 0.077;
-		player.skin.leftArm.rotation.z = -Math.cos(t) * 0.015 + 0.13 - 0.05;
-		player.skin.leftArm.position.z = Math.cos(t) * 0.3;
-		player.skin.leftArm.position.x = 5 - Math.cos(t) * 0.05;
 	}
 }
 

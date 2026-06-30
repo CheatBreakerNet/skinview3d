@@ -12,7 +12,6 @@ const availableAnimations = {
 	fly: new skinview3d.FlyingAnimation(),
 	wave: new skinview3d.WaveAnimation(),
 	crouch: new skinview3d.CrouchAnimation(),
-	hit: new skinview3d.HitAnimation(),
 	swim: new skinview3d.SwimAnimation(),
 };
 
@@ -84,6 +83,26 @@ function reloadCape(): void {
 	}
 }
 
+function reloadWings(): void {
+	const input = document.getElementById("wings_url") as HTMLInputElement;
+	const url = obtainTextureUrl("wings_url");
+	if (url === "") {
+		skinViewer.loadWings(null);
+		input?.setCustomValidity("");
+	} else {
+		const selectedBackEquipment = document.querySelector(
+			'input[type="radio"][name="back_equipment"]:checked'
+		) as HTMLInputElement;
+		skinViewer
+			.loadWings(url, { backEquipment: selectedBackEquipment?.value as BackEquipment })
+			.then(() => input?.setCustomValidity(""))
+			.catch(e => {
+				input?.setCustomValidity("Image can't be loaded.");
+				console.error(e);
+			});
+	}
+}
+
 function reloadEars(skipSkinReload = false): void {
 	const earsSource = document.getElementById("ears_source") as HTMLSelectElement;
 	const sourceType = earsSource?.value;
@@ -128,11 +147,54 @@ function reloadEars(skipSkinReload = false): void {
 	}
 }
 
+function updatePanoramaTypeVisibility(): void {
+	const panoramaType = (document.getElementById("panorama_type") as HTMLSelectElement)?.value;
+	const equirectangularOptions = document.getElementById("panorama_equirectangular_options");
+	const minecraftOptions = document.getElementById("panorama_minecraft_options");
+
+	if (panoramaType === "minecraft") {
+		equirectangularOptions?.classList.add("hidden");
+		minecraftOptions?.classList.remove("hidden");
+	} else {
+		equirectangularOptions?.classList.remove("hidden");
+		minecraftOptions?.classList.add("hidden");
+	}
+}
+
+function reloadMinecraftPanorama(): void {
+	const faceIds = [
+		"mc_panorama_front",
+		"mc_panorama_right",
+		"mc_panorama_back",
+		"mc_panorama_left",
+		"mc_panorama_top",
+		"mc_panorama_bottom",
+	];
+	const urls = faceIds.map(id => (document.getElementById(id) as HTMLInputElement)?.value ?? "");
+
+	if (urls.some(url => url === "")) {
+		console.error("All 6 face URLs are required for a Minecraft panorama.");
+		return;
+	}
+
+	const result = skinViewer.loadMinecraftPanorama(urls as [string, string, string, string, string, string]);
+	if (result) {
+		result.catch(e => console.error(e));
+	}
+}
+
 function reloadPanorama(): void {
-	const input = document.getElementById("panorama_url") as HTMLInputElement;
 	const backgroundTypeInput = document.getElementById("background_type") as HTMLSelectElement;
-	const url = obtainTextureUrl("panorama_url");
 	backgroundTypeInput.value = "panorama";
+
+	const panoramaType = (document.getElementById("panorama_type") as HTMLSelectElement)?.value;
+	if (panoramaType === "minecraft") {
+		reloadMinecraftPanorama();
+		return;
+	}
+
+	const input = document.getElementById("panorama_url") as HTMLInputElement;
+	const url = obtainTextureUrl("panorama_url");
 	if (url === "") {
 		skinViewer.background = null;
 		input?.setCustomValidity("");
@@ -398,12 +460,14 @@ function initializeControls(): void {
 
 	initializeUploadButton("skin_url", reloadSkin);
 	initializeUploadButton("cape_url", reloadCape);
+	initializeUploadButton("wings_url", reloadWings);
 	initializeUploadButton("ears_url", reloadEars);
 	initializeUploadButton("panorama_url", reloadPanorama);
 
 	const skinUrl = document.getElementById("skin_url") as HTMLInputElement;
 	const skinModel = document.getElementById("skin_model") as HTMLSelectElement;
 	const capeUrl = document.getElementById("cape_url") as HTMLInputElement;
+	const wingsUrl = document.getElementById("wings_url") as HTMLInputElement;
 	const earsSource = document.getElementById("ears_source") as HTMLSelectElement;
 	const earsUrl = document.getElementById("ears_url") as HTMLInputElement;
 	const panoramaUrl = document.getElementById("panorama_url") as HTMLInputElement;
@@ -411,9 +475,21 @@ function initializeControls(): void {
 	skinUrl?.addEventListener("change", reloadSkin);
 	skinModel?.addEventListener("change", reloadSkin);
 	capeUrl?.addEventListener("change", reloadCape);
+	wingsUrl?.addEventListener("change", reloadWings);
 	earsSource?.addEventListener("change", () => reloadEars());
 	earsUrl?.addEventListener("change", () => reloadEars());
 	panoramaUrl?.addEventListener("change", reloadPanorama);
+
+	const panoramaType = document.getElementById("panorama_type") as HTMLSelectElement;
+	panoramaType?.addEventListener("change", () => {
+		updatePanoramaTypeVisibility();
+		reloadPanorama();
+	});
+
+	const mcPanoramaLoad = document.getElementById("mc_panorama_load");
+	mcPanoramaLoad?.addEventListener("click", reloadMinecraftPanorama);
+
+	updatePanoramaTypeVisibility();
 
 	const backEquipmentRadios = document.querySelectorAll<HTMLInputElement>('input[type="radio"][name="back_equipment"]');
 	for (const el of backEquipmentRadios) {

@@ -215,6 +215,7 @@
 							><input type="radio" id="back_equipment_cape" name="back_equipment" value="cape" checked /> Cape</label
 						>
 						<label><input type="radio" id="back_equipment_elytra" name="back_equipment" value="elytra" /> Elytra</label>
+						<label><input type="radio" id="back_equipment_wings" name="back_equipment" value="wings" /> Wings</label>
 					</div>
 				</div>
 			</div>
@@ -244,7 +245,7 @@
 						</datalist>
 						<input id="skin_url_upload" type="file" class="hidden" accept="image/*" />
 						<button id="skin_url_unset" type="button" class="control hidden">Unset</button>
-						<button type="button" class="control" onclick="document.getElementById('skin_url_upload').click();">
+						<button type="button" class="control" onclick="document.getElementById('skin_url_upload').click()">
 							Browse...
 						</button>
 					</div>
@@ -282,7 +283,25 @@
 					</datalist>
 					<input id="cape_url_upload" type="file" class="hidden" accept="image/*" />
 					<button id="cape_url_unset" type="button" class="control hidden">Unset</button>
-					<button type="button" class="control" onclick="document.getElementById('cape_url_upload').click();">
+					<button type="button" class="control" onclick="document.getElementById('cape_url_upload').click()">
+						Browse...
+					</button>
+				</div>
+			</div>
+
+			<div class="control-section">
+				<h1>Wings</h1>
+				<div class="control">
+					<label
+						>URL: <input id="wings_url" type="text" value="img/dragon_wings.png" placeholder="none" list="default_wings" size="20"
+					/></label>
+					<datalist id="default_wings">
+						<option value="img/dragon_wings.png"></option>
+						<option value=""></option>
+					</datalist>
+					<input id="wings_url_upload" type="file" class="hidden" accept="image/*" />
+					<button id="wings_url_unset" type="button" class="control hidden">Unset</button>
+					<button type="button" class="control" onclick="document.getElementById('wings_url_upload').click()">
 						Browse...
 					</button>
 				</div>
@@ -312,7 +331,7 @@
 					</datalist>
 					<input id="ears_url_upload" type="file" class="hidden" accept="image/*" />
 					<button id="ears_url_unset" type="button" class="control hidden">Unset</button>
-					<button type="button" class="control" onclick="document.getElementById('ears_url_upload').click();">
+					<button type="button" class="control" onclick="document.getElementById('ears_url_upload').click()">
 						Browse...
 					</button>
 				</div>
@@ -347,6 +366,16 @@
 				<h1>Panorama</h1>
 				<div class="control">
 					<label
+						>Format:
+						<select id="panorama_type">
+							<option value="equirectangular" selected>Equirectangular (single image)</option>
+							<option value="minecraft">Minecraft (6 cube faces)</option>
+						</select>
+					</label>
+				</div>
+
+				<div id="panorama_equirectangular_options" class="control">
+					<label
 						>URL:
 						<input
 							id="panorama_url"
@@ -362,9 +391,43 @@
 					</datalist>
 					<input id="panorama_url_upload" type="file" class="hidden" accept="image/*" />
 					<button id="panorama_url_unset" type="button" class="control hidden">Unset</button>
-					<button type="button" class="control" onclick="document.getElementById('panorama_url_upload').click();">
+					<button type="button" class="control" onclick="document.getElementById('panorama_url_upload').click()">
 						Browse...
 					</button>
+				</div>
+
+				<div id="panorama_minecraft_options" class="control hidden">
+					<div class="control">
+						<label
+							>Front: <input id="mc_panorama_front" type="text" value="img/panorama/2.png" placeholder="panorama_0.png" size="18"
+						/></label>
+					</div>
+					<div class="control">
+						<label
+							>Right: <input id="mc_panorama_right" type="text" value="img/panorama/1.png" placeholder="panorama_1.png" size="18"
+						/></label>
+					</div>
+					<div class="control">
+						<label
+							>Back: <input id="mc_panorama_back" type="text" value="img/panorama/0.png" placeholder="panorama_2.png" size="18"
+						/></label>
+					</div>
+					<div class="control">
+						<label
+							>Left: <input id="mc_panorama_left" type="text" value="img/panorama/3.png" placeholder="panorama_3.png" size="18"
+						/></label>
+					</div>
+					<div class="control">
+						<label
+							>Top: <input id="mc_panorama_top" type="text" value="img/panorama/4.png" placeholder="panorama_4.png" size="18"
+						/></label>
+					</div>
+					<div class="control">
+						<label
+							>Bottom: <input id="mc_panorama_bottom" type="text" value="img/panorama/5.png" placeholder="panorama_5.png" size="18"
+						/></label>
+					</div>
+					<button id="mc_panorama_load" type="button" class="control">Load</button>
 				</div>
 			</div>
 
