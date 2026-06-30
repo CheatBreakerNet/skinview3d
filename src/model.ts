@@ -634,7 +634,7 @@ export class PlayerObject extends Group {
 	resetJoints(): void {
 		this.skin.resetJoints();
 		this.cape.rotation.x = CapeDefaultAngle;
-		this.cape.rotation.y = 0;
+		this.cape.rotation.y = Math.PI;
 		this.cape.rotation.z = 0;
 		this.cape.position.y = 8;
 		this.cape.position.z = -2;
