@@ -3,13 +3,16 @@ import {
 	BoxGeometry,
 	BufferAttribute,
 	DoubleSide,
+	Euler,
 	FrontSide,
 	Group,
 	Mesh,
 	MeshStandardMaterial,
 	Object3D,
+	Quaternion,
 	Texture,
 	Vector2,
+	Vector3,
 } from "three";
 
 function setUVs(
@@ -67,9 +70,73 @@ function setCapeUVs(box: BoxGeometry, u: number, v: number, width: number, heigh
 }
 
 /**
+ * A bone is an animatable joint
+ * Every bone has three layers of transform that are composed together each frame via {@link commit}:
+ * - `base*`    - the rest-pose offset from the parent. Set once, never touched by animations.
+ * - `origin*`  - written by the currently active "pose" animation
+ * - `offset*`  - written by transient modifier states (basically swinging and jumping)
+ */
+export class Bone extends Group {
+	readonly basePosition: Vector3 = new Vector3();
+
+	readonly originPosition: Vector3 = new Vector3();
+	readonly originRotation: Euler = new Euler();
+
+	readonly offsetPosition: Vector3 = new Vector3();
+	readonly offsetRotation: Euler = new Euler();
+
+	private originQuaternionValue: Quaternion | null = null;
+
+	setBasePosition(x: number, y: number, z: number): void {
+		this.basePosition.set(x, y, z);
+	}
+
+	// used by poses that are expressed as quaternions (like swimming)
+	setOriginQuaternion(q: Quaternion): void {
+		if (this.originQuaternionValue === null) {
+			this.originQuaternionValue = new Quaternion();
+		}
+
+		this.originQuaternionValue.copy(q);
+	}
+
+	resetOrigin(): void {
+		this.originPosition.set(0, 0, 0);
+		this.originRotation.set(0, 0, 0);
+		this.originQuaternionValue = null;
+	}
+
+	resetOffset(): void {
+		this.offsetPosition.set(0, 0, 0);
+		this.offsetRotation.set(0, 0, 0);
+	}
+
+	// TODO: still needs some improvement
+	// composes base + origin + offset into the actual position and rotation of this bone
+	commit(): void {
+		this.position.set(
+			this.basePosition.x + this.originPosition.x + this.offsetPosition.x,
+			this.basePosition.y + this.originPosition.y + this.offsetPosition.y,
+			this.basePosition.z + this.originPosition.z + this.offsetPosition.z
+		);
+
+		if (this.originQuaternionValue !== null) {
+			const offsetQuat = new Quaternion().setFromEuler(this.offsetRotation);
+			this.quaternion.copy(this.originQuaternionValue).multiply(offsetQuat);
+		} else {
+			this.rotation.set(
+				this.originRotation.x + this.offsetRotation.x,
+				this.originRotation.y + this.offsetRotation.y,
+				this.originRotation.z + this.offsetRotation.z
+			);
+		}
+	}
+}
+
+/**
  * Notice that innerLayer and outerLayer may NOT be the direct children of the Group.
  */
-export class BodyPart extends Group {
+export class BodyPart extends Bone {
 	constructor(
 		readonly innerLayer: Object3D,
 		readonly outerLayer: Object3D
@@ -134,6 +201,7 @@ export class SkinObject extends Group {
 		this.head.add(headMesh, head2Mesh);
 		headMesh.position.y = 4;
 		head2Mesh.position.y = 4;
+		this.head.setBasePosition(0, 0, 0);
 		this.add(this.head);
 
 		// Body
@@ -148,7 +216,7 @@ export class SkinObject extends Group {
 		this.body = new BodyPart(bodyMesh, body2Mesh);
 		this.body.name = "body";
 		this.body.add(bodyMesh, body2Mesh);
-		this.body.position.y = -6;
+		this.body.setBasePosition(0, -6, 0);
 		this.add(this.body);
 
 		// Right Arm
@@ -180,9 +248,8 @@ export class SkinObject extends Group {
 		this.rightArm = new BodyPart(rightArmMesh, rightArm2Mesh);
 		this.rightArm.name = "rightArm";
 		this.rightArm.add(rightArmPivot);
-		this.rightArm.position.x = -5;
-		this.rightArm.position.y = -2;
-		this.add(this.rightArm);
+		this.rightArm.setBasePosition(-5, 4, 0);
+		this.body.add(this.rightArm);
 
 		// Left Arm
 		const leftArmBox = new BoxGeometry();
@@ -213,9 +280,8 @@ export class SkinObject extends Group {
 		this.leftArm = new BodyPart(leftArmMesh, leftArm2Mesh);
 		this.leftArm.name = "leftArm";
 		this.leftArm.add(leftArmPivot);
-		this.leftArm.position.x = 5;
-		this.leftArm.position.y = -2;
-		this.add(this.leftArm);
+		this.leftArm.setBasePosition(5, 4, 0);
+		this.body.add(this.leftArm);
 
 		// Right Leg
 		const rightLegBox = new BoxGeometry(4, 12, 4);
@@ -233,9 +299,7 @@ export class SkinObject extends Group {
 		this.rightLeg = new BodyPart(rightLegMesh, rightLeg2Mesh);
 		this.rightLeg.name = "rightLeg";
 		this.rightLeg.add(rightLegPivot);
-		this.rightLeg.position.x = -1.9;
-		this.rightLeg.position.y = -12;
-		this.rightLeg.position.z = -0.1;
+		this.rightLeg.setBasePosition(-1.9, -12, -0.1);
 		this.add(this.rightLeg);
 
 		// Left Leg
@@ -254,12 +318,12 @@ export class SkinObject extends Group {
 		this.leftLeg = new BodyPart(leftLegMesh, leftLeg2Mesh);
 		this.leftLeg.name = "leftLeg";
 		this.leftLeg.add(leftLegPivot);
-		this.leftLeg.position.x = 1.9;
-		this.leftLeg.position.y = -12;
-		this.leftLeg.position.z = -0.1;
+		this.leftLeg.setBasePosition(1.9, -12, -0.1);
 		this.add(this.leftLeg);
 
 		this.modelType = "default";
+
+		this.commitPose();
 	}
 
 	get map(): Texture | null {
@@ -295,6 +359,11 @@ export class SkinObject extends Group {
 		return this.children.filter(it => it instanceof BodyPart) as Array<BodyPart>;
 	}
 
+	// all bones in order
+	get bones(): Bone[] {
+		return [this.head, this.body, this.rightArm, this.leftArm, this.rightLeg, this.leftLeg];
+	}
+
 	setInnerLayerVisible(value: boolean): void {
 		this.getBodyParts().forEach(part => (part.innerLayer.visible = value));
 	}
@@ -303,28 +372,17 @@ export class SkinObject extends Group {
 		this.getBodyParts().forEach(part => (part.outerLayer.visible = value));
 	}
 
+	commitPose(): void {
+		for (const bone of this.bones) {
+			bone.commit();
+		}
+	}
 	resetJoints(): void {
-		this.head.rotation.set(0, 0, 0);
-		this.leftArm.rotation.set(0, 0, 0);
-		this.rightArm.rotation.set(0, 0, 0);
-		this.leftLeg.rotation.set(0, 0, 0);
-		this.rightLeg.rotation.set(0, 0, 0);
-		this.body.rotation.set(0, 0, 0);
-		this.head.position.y = 0;
-		this.body.position.y = -6;
-		this.body.position.z = 0;
-		this.rightArm.position.x = -5;
-		this.rightArm.position.y = -2;
-		this.rightArm.position.z = 0;
-		this.leftArm.position.x = 5;
-		this.leftArm.position.y = -2;
-		this.leftArm.position.z = 0;
-		this.rightLeg.position.x = -1.9;
-		this.rightLeg.position.y = -12;
-		this.rightLeg.position.z = -0.1;
-		this.leftLeg.position.x = 1.9;
-		this.leftLeg.position.y = -12;
-		this.leftLeg.position.z = -0.1;
+		for (const bone of this.bones) {
+			bone.resetOrigin();
+			bone.resetOffset();
+			bone.commit();
+		}
 	}
 }
 
@@ -513,7 +571,7 @@ export class WingsObject extends Group {
 
 		const leftWingTip = this.leftWing.getObjectByName("wingTip");
 		const rightWingTip = this.rightWing.getObjectByName("wingTip");
-		
+
 		if (leftWingTip && rightWingTip) {
 			rightWingTip.rotation.z = leftWingTip.rotation.z;
 		}
@@ -586,27 +644,27 @@ export class PlayerObject extends Group {
 
 		this.cape = new CapeObject();
 		this.cape.name = "cape";
-		this.cape.position.y = 8;
+		this.cape.position.y = 6;
 		this.cape.position.z = -2;
 		this.cape.rotation.x = CapeDefaultAngle;
 		this.cape.rotation.y = Math.PI;
-		this.add(this.cape);
+		this.skin.body.add(this.cape);
 
 		this.elytra = new ElytraObject();
 		this.elytra.name = "elytra";
-		this.elytra.position.y = 8;
+		this.elytra.position.y = 6;
 		this.elytra.position.z = -2;
 		this.elytra.visible = false;
-		this.add(this.elytra);
+		this.skin.body.add(this.elytra);
 
 		this.wings = new WingsObject();
 		this.wings.name = "wings";
-		this.wings.position.y = 8;
+		this.wings.position.y = 6.5;
 		this.wings.position.z = -2;
 		this.wings.scale.set(0.12, 0.12, 0.12);
 		this.wings.rotation.x = 0.2617994;
 		this.wings.visible = false;
-		this.add(this.wings);
+		this.skin.body.add(this.wings);
 
 		this.ears = new EarsObject();
 		this.ears.name = "ears";
@@ -636,16 +694,19 @@ export class PlayerObject extends Group {
 
 	resetJoints(): void {
 		this.skin.resetJoints();
+
 		this.cape.rotation.x = CapeDefaultAngle;
 		this.cape.rotation.y = Math.PI;
 		this.cape.rotation.z = 0;
-		this.cape.position.y = 8;
+		this.cape.position.y = 6;
 		this.cape.position.z = -2;
-		this.elytra.position.y = 8;
+
+		this.elytra.position.y = 6;
 		this.elytra.position.z = -2;
 		this.elytra.rotation.x = 0;
 		this.elytra.resetJoints();
-		this.wings.position.y = 8;
+
+		this.wings.position.y = 6;
 		this.wings.position.z = -2;
 		this.wings.rotation.x = 0.2617994;
 		this.wings.resetJoints();

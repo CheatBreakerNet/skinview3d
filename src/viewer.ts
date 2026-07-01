@@ -48,7 +48,7 @@ import { FXAAShader } from "three/examples/jsm/shaders/FXAAShader.js";
 import { PlayerAnimation } from "./animation.js";
 import { type BackEquipment, PlayerObject } from "./model.js";
 import { NameTagObject } from "./nametag.js";
-import { clamp, clamp01, lerp } from "./utils.js";
+import { clamp, clamp01, isDev, lerp } from "./utils.js";
 
 export interface LoadOptions {
 	/**
@@ -557,7 +557,7 @@ export class SkinViewer {
 		);
 
 		this.onKeyDown = (event: KeyboardEvent) => {
-			if (event.code === "ShiftLeft" || event.code === "Space") {
+			if ((isDev && event.code === "ShiftLeft") || event.code === "Space") {
 				console.log(`[SkinViewer] Key pressed: ${event.code}`);
 			}
 
@@ -916,7 +916,7 @@ export class SkinViewer {
 			const material = new MeshBasicMaterial({
 				color: 0x000000,
 				transparent: true,
-				opacity: 0.5,
+				opacity: 0.15,
 				depthWrite: false,
 				side: FrontSide,
 			});
@@ -934,7 +934,7 @@ export class SkinViewer {
 		if (!this.shadowMesh) return;
 
 		this.scene.remove(this.shadowMesh);
-		
+
 		this.shadowEnabled = false;
 	}
 

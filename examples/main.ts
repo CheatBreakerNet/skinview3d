@@ -12,6 +12,7 @@ const availableAnimations = {
 	run: new skinview3d.RunningAnimation(),
 	fly: new skinview3d.FlyingAnimation(),
 	swim: new skinview3d.SwimAnimation(),
+	breathing: new skinview3d.BreathingAnimation()
 };
 
 let skinViewer: skinview3d.SkinViewer;

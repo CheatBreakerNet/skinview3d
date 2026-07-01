@@ -1,3 +1,5 @@
+export const isDev: boolean = true;
+
 // function that maps a normalized time to an eased value
 export type EasingFn = (t: number) => number;
 

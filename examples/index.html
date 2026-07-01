@@ -92,8 +92,8 @@
 			<div class="control-section">
 				<h1>Viewport</h1>
 				<div>
-					<label class="control">Width: <input id="canvas_width" type="number" value="300" size="4" /></label>
-					<label class="control">Height: <input id="canvas_height" type="number" value="300" size="4" /></label>
+					<label class="control">Width: <input id="canvas_width" type="number" value="512" size="4" /></label>
+					<label class="control">Height: <input id="canvas_height" type="number" value="512" size="4" /></label>
 				</div>
 				<div>
 					<label class="control"
@@ -132,6 +132,7 @@
 					<label><input type="radio" id="animation_run" name="animation" value="run" /> Run</label>
 					<label><input type="radio" id="animation_fly" name="animation" value="fly" /> Fly</label>
 					<label><input type="radio" id="animation_swim" name="animation" value="swim" /> Swim</label>
+					<label><input type="radio" id="animation_swim" name="animation" value="breathing" /> Breathing</label>
 				</div>
 				<label class="control">Speed: <input id="animation_speed" type="number" value="1" step="0.1" size="3" /></label>
 				<button id="animation_pause_resume" type="button" class="control">Pause / Resume</button>
@@ -290,7 +291,14 @@
 				<h1>Wings</h1>
 				<div class="control">
 					<label
-						>URL: <input id="wings_url" type="text" value="img/dragon_wings.png" placeholder="none" list="default_wings" size="20"
+						>URL:
+						<input
+							id="wings_url"
+							type="text"
+							value="img/dragon_wings.png"
+							placeholder="none"
+							list="default_wings"
+							size="20"
 					/></label>
 					<datalist id="default_wings">
 						<option value="img/dragon_wings.png"></option>
@@ -396,32 +404,63 @@
 				<div id="panorama_minecraft_options" class="control hidden">
 					<div class="control">
 						<label
-							>Front: <input id="mc_panorama_front" type="text" value="img/panorama/2.png" placeholder="panorama_0.png" size="18"
+							>Front:
+							<input
+								id="mc_panorama_front"
+								type="text"
+								value="img/panorama/2.png"
+								placeholder="panorama_0.png"
+								size="18"
 						/></label>
 					</div>
 					<div class="control">
 						<label
-							>Right: <input id="mc_panorama_right" type="text" value="img/panorama/1.png" placeholder="panorama_1.png" size="18"
+							>Right:
+							<input
+								id="mc_panorama_right"
+								type="text"
+								value="img/panorama/1.png"
+								placeholder="panorama_1.png"
+								size="18"
 						/></label>
 					</div>
 					<div class="control">
 						<label
-							>Back: <input id="mc_panorama_back" type="text" value="img/panorama/0.png" placeholder="panorama_2.png" size="18"
+							>Back:
+							<input
+								id="mc_panorama_back"
+								type="text"
+								value="img/panorama/0.png"
+								placeholder="panorama_2.png"
+								size="18"
 						/></label>
 					</div>
 					<div class="control">
 						<label
-							>Left: <input id="mc_panorama_left" type="text" value="img/panorama/3.png" placeholder="panorama_3.png" size="18"
+							>Left:
+							<input
+								id="mc_panorama_left"
+								type="text"
+								value="img/panorama/3.png"
+								placeholder="panorama_3.png"
+								size="18"
 						/></label>
 					</div>
 					<div class="control">
 						<label
-							>Top: <input id="mc_panorama_top" type="text" value="img/panorama/4.png" placeholder="panorama_4.png" size="18"
+							>Top:
+							<input id="mc_panorama_top" type="text" value="img/panorama/4.png" placeholder="panorama_4.png" size="18"
 						/></label>
 					</div>
 					<div class="control">
 						<label
-							>Bottom: <input id="mc_panorama_bottom" type="text" value="img/panorama/5.png" placeholder="panorama_5.png" size="18"
+							>Bottom:
+							<input
+								id="mc_panorama_bottom"
+								type="text"
+								value="img/panorama/5.png"
+								placeholder="panorama_5.png"
+								size="18"
 						/></label>
 					</div>
 					<button id="mc_panorama_load" type="button" class="control">Load</button>
