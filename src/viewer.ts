@@ -37,7 +37,7 @@ import {
 	Mesh,
 	CircleGeometry,
 	MeshBasicMaterial,
-	FrontSide,
+	BackSide,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
@@ -48,7 +48,7 @@ import { FXAAShader } from "three/examples/jsm/shaders/FXAAShader.js";
 import { PlayerAnimation } from "./animation.js";
 import { type BackEquipment, PlayerObject } from "./model.js";
 import { NameTagObject } from "./nametag.js";
-import { clamp, clamp01, isDev, lerp } from "./utils.js";
+import { clamp, clamp01, lerp } from "./math.js";
 
 export interface LoadOptions {
 	/**
@@ -319,10 +319,12 @@ export class SkinViewer {
 	readonly capeCanvas: HTMLCanvasElement;
 	readonly earsCanvas: HTMLCanvasElement;
 	readonly wingsCanvas: HTMLCanvasElement;
+	readonly shadowCanvas: HTMLCanvasElement;
 	private skinTexture: Texture | null = null;
 	private capeTexture: Texture | null = null;
 	private earsTexture: Texture | null = null;
 	private wingsTexture: Texture | null = null;
+	private shadowTexture: Texture | null = null;
 	private backgroundTexture: Texture | null = null;
 
 	private _disposed: boolean = false;
@@ -335,14 +337,27 @@ export class SkinViewer {
 
 	private onMouseDown: (event: MouseEvent) => void;
 
+	/**
+	 * Whether cape swaying (a subtle rotation to the cape as the
+	 * camera orbits around the player) is currently enabled.
+	 * @defaultValue `true`
+	 * @see {@link enableCapeSway}
+	 * @see {@link disableCapeSway}
+	 */
 	private _capeSwayEnabled: boolean = true;
+	private capeSway: number = 0;
 	private _capeMaxSway: number = 0.15;
 	private _capeStiffness: number = 8.0;
 	private _capeDrive: number = 12.0;
-	private capeSway: number = 0;
 
+	/**
+	 * Whether a shadow mesh (below the player) is currently enabled.
+	 * @defaultValue `true`
+	 * @see {@link enableShadow}
+	 * @see {@link disableShadow}
+	 */
+	private _shadowEnabled = false;
 	private shadowMesh: Mesh | null = null;
-	private shadowEnabled = false;
 
 	/**
 	 * Whether to rotate the player along the y axis.
@@ -380,12 +395,16 @@ export class SkinViewer {
 		this.capeCanvas = document.createElement("canvas");
 		this.earsCanvas = document.createElement("canvas");
 		this.wingsCanvas = document.createElement("canvas");
+		this.shadowCanvas = document.createElement("canvas");
 
 		this.scene = new Scene();
+
 		this.camera = new PerspectiveCamera();
 		this.camera.add(this.cameraLight);
+
 		this.scene.add(this.camera);
 		this.scene.add(this.globalLight);
+
 		ColorManagement.enabled = false;
 
 		this.renderer = new WebGLRenderer({
@@ -423,6 +442,7 @@ export class SkinViewer {
 				depthTexture: new DepthTexture(0, 0, FloatType),
 			});
 		}
+
 		this.composer = new EffectComposer(this.renderer, renderTarget);
 		this.renderPass = new RenderPass(this.scene, this.camera);
 		this.fxaaPass = new ShaderPass(FXAAShader);
@@ -557,9 +577,9 @@ export class SkinViewer {
 		);
 
 		this.onKeyDown = (event: KeyboardEvent) => {
-			if ((isDev && event.code === "ShiftLeft") || event.code === "Space") {
-				console.log(`[SkinViewer] Key pressed: ${event.code}`);
-			}
+			// if (event.code === "ShiftLeft" || event.code === "Space") {
+			// 	console.log(`[SkinViewer] Key pressed: ${event.code}`);
+			// }
 
 			if (event.code === "Space" && this.animation) {
 				this.animation.playJump();
@@ -725,10 +745,51 @@ export class SkinViewer {
 		this.playerObject.cape.rotation.z = this.capeSway;
 	}
 
+	/**
+	 * Whether cape swaying is currently enabled.
+	 *
+	 * @see {@link enableCapeSway}
+	 * @see {@link disableCapeSway}
+	 */
+	get capeSwayEnabled(): boolean {
+		return this._capeSwayEnabled;
+	}
+
+	/**
+	 * Enables cape swaying.
+	 *
+	 * When enabled, the cape rotates slightly from side to side as the camera
+	 * orbits around the player. This is inspired by Laby's website.
+	 * @see https://laby.net/skins/497c555947a31e312fe1cfad857be2b4
+	 *
+	 * @example
+	 * ```
+	 * skinViewer.enableCapeSway();
+	 * ```
+	 */
+	enableCapeSway(): void {
+		this._capeSwayEnabled = true;
+	}
+
+	/**
+	 * Disables cape swaying and resets the cape's sway rotation back to 0.
+	 *
+	 * @example
+	 * ```
+	 * skinViewer.disableCapeSway();
+	 * ```
+	 */
+	disableCapeSway(): void {
+		this._capeSwayEnabled = false;
+		this.capeSway = 0;
+		this.playerObject.cape.rotation.z = 0;
+	}
+
 	private recreateWingsTexture(): void {
 		if (this.wingsTexture !== null) {
 			this.wingsTexture.dispose();
 		}
+
 		this.wingsTexture = new CanvasTexture(this.wingsCanvas);
 		this.wingsTexture.magFilter = NearestFilter;
 		this.wingsTexture.minFilter = NearestFilter;
@@ -752,6 +813,7 @@ export class SkinViewer {
 				ctx.clearRect(0, 0, source.width, source.height);
 				ctx.drawImage(source, 0, 0);
 			}
+
 			this.recreateWingsTexture();
 
 			if (options.makeVisible !== false) {
@@ -765,6 +827,7 @@ export class SkinViewer {
 	resetWings(): void {
 		this.playerObject.backEquipment = null;
 		this.playerObject.wings.map = null;
+
 		if (this.wingsTexture !== null) {
 			this.wingsTexture.dispose();
 			this.wingsTexture = null;
@@ -786,10 +849,12 @@ export class SkinViewer {
 			} else {
 				loadEarsToCanvas(this.earsCanvas, source);
 			}
+
 			this.recreateEarsTexture();
 
 			if (options.makeVisible !== false) {
 				this.playerObject.ears.visible = true;
+
 				if (this._nameTag) {
 					this.nameTagYOffset = 25;
 					this._nameTag.position.y = this.nameTagYOffset;
@@ -802,11 +867,14 @@ export class SkinViewer {
 
 	resetEars(): void {
 		this.playerObject.ears.visible = false;
+
 		if (this._nameTag) {
 			this.nameTagYOffset = 20;
 			this._nameTag.position.y = this.nameTagYOffset;
 		}
+
 		this.playerObject.ears.map = null;
+
 		if (this.earsTexture !== null) {
 			this.earsTexture.dispose();
 			this.earsTexture = null;
@@ -905,41 +973,122 @@ export class SkinViewer {
 		}
 	}
 
-	enableShadow(): void {
-		if (this.shadowEnabled) return;
-
-		this.shadowEnabled = true;
-
+	// TODO
+	private loadShadowMesh(): Mesh {
 		if (!this.shadowMesh) {
-			const geometry = new CircleGeometry(6, 24);
+			const geometry = new CircleGeometry(8, 16);
 
 			const material = new MeshBasicMaterial({
 				color: 0x000000,
 				transparent: true,
-				opacity: 0.15,
+				opacity: 0.2,
 				depthWrite: false,
-				side: FrontSide,
+				side: BackSide, // won't be visible if the camera is below the player.
 			});
 
 			this.shadowMesh = new Mesh(geometry, material);
-
-			this.shadowMesh.rotation.x = -Math.PI / 2;
+			this.shadowMesh.rotation.x = Math.PI / 2;
 			this.shadowMesh.position.y = -16;
 		}
 
-		this.scene.add(this.shadowMesh);
+		return this.shadowMesh;
 	}
 
+	private recreateShadowTexture(): void {
+		if (this.shadowTexture !== null) {
+			this.shadowTexture.dispose();
+		}
+
+		this.shadowTexture = new CanvasTexture(this.shadowCanvas);
+		this.shadowTexture.magFilter = NearestFilter;
+		this.shadowTexture.minFilter = NearestFilter;
+
+		const material = this.loadShadowMesh().material as MeshBasicMaterial;
+
+		material.map = this.shadowTexture;
+		material.color.set(0xffffff);
+		material.needsUpdate = true;
+	}
+
+	/**
+	 * Whether the player shadow is currently enabled.
+	 *
+	 * @see {@link enableShadow}
+	 * @see {@link disableShadow}
+	 */
+	get shadowEnabled(): boolean {
+		return this._shadowEnabled;
+	}
+
+	/**
+	 * Enables the player shadow.
+	 *
+	 * @example
+	 * ```
+	 * skinViewer.enableShadow();
+	 * ```
+	 */
+	enableShadow(): void {
+		if (this._shadowEnabled) return;
+
+		this._shadowEnabled = true;
+		this.scene.add(this.loadShadowMesh());
+	}
+
+	/**
+	 * Disables the player shadow, removing it from the scene.
+	 *
+	 * @example
+	 * ```
+	 * skinViewer.disableShadow();
+	 * ```
+	 */
 	disableShadow(): void {
 		if (!this.shadowMesh) return;
 
 		this.scene.remove(this.shadowMesh);
 
-		this.shadowEnabled = false;
+		this._shadowEnabled = false;
+	}
+
+	loadShadow(empty: null): void;
+	loadShadow<S extends TextureSource | RemoteImage>(source: S): S extends TextureSource ? void : Promise<void>;
+
+	loadShadow(source: TextureSource | RemoteImage | null): void | Promise<void> {
+		if (source === null) {
+			this.resetShadow();
+		} else if (isTextureSource(source)) {
+			const ctx = this.shadowCanvas.getContext("2d");
+			if (ctx) {
+				this.shadowCanvas.width = source.width;
+				this.shadowCanvas.height = source.height;
+				ctx.clearRect(0, 0, source.width, source.height);
+				ctx.drawImage(source, 0, 0);
+			}
+
+			this.recreateShadowTexture();
+		} else {
+			return loadImage(source).then(image => this.loadShadow(image));
+		}
+	}
+
+	resetShadow(): void {
+		if (this.shadowTexture !== null) {
+			this.shadowTexture.dispose();
+			this.shadowTexture = null;
+		}
+
+		if (this.shadowMesh) {
+			const material = this.shadowMesh.material as MeshBasicMaterial;
+			material.map = null;
+			material.color.set(0x000000);
+			material.needsUpdate = true;
+		}
 	}
 
 	private draw(): void {
 		const dt = this.clock.getDelta();
+
 		if (this._animation !== null) {
 			this._animation.update(this.playerObject, dt);
 			if (this._nameTag) {
@@ -947,6 +1096,7 @@ export class SkinViewer {
 					this.playerObject.skin.head.getWorldPosition(new Vector3()).y + this.nameTagYOffset - 8;
 			}
 		}
+
 		if (this.autoRotate) {
 			if (!(this.controls.enableRotate && this.isUserRotating)) {
 				this.playerWrapper.rotation.y += dt * this.autoRotateSpeed;
@@ -997,10 +1147,14 @@ export class SkinViewer {
 
 		this.controls.dispose();
 		this.renderer.dispose();
+
 		this.resetSkin();
 		this.resetCape();
 		this.resetEars();
+		this.resetShadow();
+
 		this.background = null;
+
 		(this.fxaaPass.fsQuad as FullScreenQuad).dispose();
 	}
 
@@ -1120,6 +1274,7 @@ export class SkinViewer {
 				this.devicePixelRatioQuery.removeEventListener("change", this.onDevicePixelRatioChange);
 				this.devicePixelRatioQuery = null;
 			}
+
 			this._pixelRatio = newValue;
 			this.renderer.setPixelRatio(newValue);
 			this.updateComposerSize();
@@ -1143,9 +1298,11 @@ export class SkinViewer {
 			this.playerObject.resetJoints();
 			this.playerObject.position.set(0, 0, 0);
 			this.playerObject.rotation.set(0, 0, 0);
+
 			if (this._nameTag) {
 				this._nameTag.position.y = this.nameTagYOffset;
 			}
+
 			this.clock.stop();
 			this.clock.autoStart = true;
 		}

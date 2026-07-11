@@ -1,16 +1,58 @@
 import { PlayerObject } from "./model.js";
-import { Quaternion, Vector3 } from "three";
-import { easeInOutSine, easingArc, clamp01 } from "./utils.js";
+import { easeInOutSine, easingArc, clamp01, sampleEulerKeyframes } from "./math.js";
+import { breathing, swimLeftArm, swimRightArm } from "./animation-keyframes.js";
 
 export type PlayerState = "Idle" | "Swinging" | "Jumping" | "Crouching";
 
+/**
+ * Controls which actions are currently allowed to be played.
+ * All actions are enabled by default. Set a flag to prevent that action from
+ * starting when {@link PlayerAnimation.playJump} or any of the other animations are called.
+ *
+ * @example
+ * ```
+ * // Prevent the player from jumping or swinging, but allow crouching
+ * animation.actions.jump = false
+ * animation.actions.swing = false
+ * ```
+ */
+export interface AnimationActions {
+	/**
+	 * Whether {@link PlayerAnimation.playJump} is allowed to start a jump.
+	 * @defaultValue `true`
+	 */
+	jump: boolean;
+
+	/**
+	 * Whether {@link PlayerAnimation.playSwing} is allowed to start a swing.
+	 * @defaultValue `true`
+	 */
+	swing: boolean;
+
+	/**
+	 * Whether {@link PlayerAnimation.playCrouch} is allowed to change the crouch state.
+	 * @defaultValue `true`
+	 */
+	crouch: boolean;
+}
+
 interface AnimationState {
-	/** Which modifier states are currently active */
+	/**
+	 * Which modifier states are currently active.
+	 */
 	states: Set<PlayerState>;
 
-	/** Delta time of the animation */
+	/**
+	 * Delta time of the animation.
+	 */
 	progress: number;
 }
+
+const DefaultActions: Readonly<AnimationActions> = {
+	jump: true,
+	swing: true,
+	crouch: true,
+};
 
 /**
  * An animation which can be played on a {@link PlayerObject}.
@@ -39,9 +81,24 @@ export abstract class PlayerAnimation {
 	progress: number = 0;
 
 	/**
+	 * Which player actions are currently allowed to be started.
+	 *
+	 * @defaultValue `{ jump: true, swing: true, crouch: true }`
+	 * @see {@link AllowedActions}
+	 */
+	allowedActions: AnimationActions = { ...DefaultActions };
+
+	/**
 	 * The name of the currently active animation class.
 	 */
 	protected readonly _activeAnimation: string;
+
+	/**
+	 * What the animation supports.
+	 */
+	protected get supportedActions(): Readonly<AnimationActions> {
+		return DefaultActions;
+	}
 
 	/**
 	 * Plays the animation one tick.
@@ -49,27 +106,6 @@ export abstract class PlayerAnimation {
 	 * @param delta  - scaled time elapsed since last call
 	 */
 	protected abstract animate(player: PlayerObject, delta: number): void;
-
-	// Disabled animations for certain states
-	protected static readonly swingDisabledAnimations: readonly string[] = [
-		"FlyingAnimation",
-		"SwimAnimation",
-		"BreathingAnimation",
-	];
-	protected static readonly swingLeftArmDisabledAnimation: readonly string[] = [];
-	protected static readonly jumpDisabledAnimations: readonly string[] = [
-		"RunningAnimation",
-		"WalkingAnimation",
-		"FlyingAnimation",
-		"SwimAnimation",
-		"BreathingAnimation",
-	];
-	protected static readonly crouchDisabledAnimations: readonly string[] = [
-		"FlyingAnimation",
-		"SwimAnimation",
-		"RunningAnimation",
-		"BreathingAnimation",
-	];
 
 	// Swings
 	private _swingActive: boolean = false;
@@ -88,6 +124,10 @@ export abstract class PlayerAnimation {
 	private _crouchActive: boolean = false;
 	private _crouchWasActive: boolean = false;
 
+	// The set of modifer states that are currently active, kept in sync
+	// incrementally by setState() instead of being recomputed on every read.
+	private readonly _states: Set<PlayerState> = new Set(["Idle"]);
+
 	private _nextId: number = 0;
 	private _addons: Map<number, (player: PlayerObject, progress: number, id: number) => void> = new Map();
 	private _addonOrigins: Map<number, number> = new Map();
@@ -97,41 +137,34 @@ export abstract class PlayerAnimation {
 	}
 
 	/**
+	 * Mark a modifier state as active or inactive,
+	 * keeping the internal state set consistent.
+	 */
+	private setState(state: Exclude<PlayerState, "Idle">, active: boolean): void {
+		if (active) {
+			this._states.delete("Idle");
+			this._states.add(state);
+		} else {
+			this._states.delete(state);
+			// if _states is empty, add an idle state
+			if (this._states.size === 0) {
+				this._states.add("Idle");
+			}
+		}
+	}
+
+	/**
 	 * Which modifier states are currently active.
 	 */
 	get states(): Set<PlayerState> {
-		const states = new Set<PlayerState>();
-
-		if (this._swingActive) states.add("Swinging");
-
-		if (this._jumpActive) states.add("Jumping");
-
-		if (this._crouchActive) states.add("Crouching");
-
-		if (states.size === 0) states.add("Idle");
-
-		return states;
+		return new Set(this._states);
 	}
 
-	/** Whether a given modifier state is currently active. */
+	/**
+	 * Whether a given modifier state is currently active.
+	 */
 	hasState(state: PlayerState): boolean {
-		switch (state) {
-			// Idle
-			case "Idle":
-				return !this._swingActive && !this._jumpActive && !this._crouchActive;
-
-			// Swinging
-			case "Swinging":
-				return this._swingActive;
-
-			// Jumping
-			case "Jumping":
-				return this._jumpActive;
-
-			// Crouching
-			case "Crouching":
-				return this._crouchActive;
-		}
+		return this._states.has(state);
 	}
 
 	/**
@@ -242,22 +275,24 @@ export abstract class PlayerAnimation {
 		player.wings.updateRightWing();
 	}
 
-	/** Animate a player jump */
+	/**
+	 * Animate a player jump.
+	 */
 	playJump(): void {
-		const constructor = this.constructor as typeof PlayerAnimation;
-
-		if (constructor.jumpDisabledAnimations.includes(this._activeAnimation)) {
-			return;
-		}
+		if (!this.allowedActions.jump) return;
+		if (!this.supportedActions.jump) return;
 
 		if (!this._jumpActive && !this._jumpCooldown) {
 			this._jumpActive = true;
 			this._jumpTime = 0;
 			this._jumpCooldown = true;
+			this.setState("Jumping", true);
 		}
 	}
 
-	/** Whether a jump animation is currently playing. */
+	/**
+	 * Whether a jump animation is currently playing.
+	 */
 	get isJumping(): boolean {
 		return this._jumpActive;
 	}
@@ -278,31 +313,39 @@ export abstract class PlayerAnimation {
 			this._jumpCooldown = false;
 			this._jumpTime = 0;
 			player.position.y = 0;
+			this.setState("Jumping", false);
 		} else {
 			player.position.y = easingArc(t, this._jumpHeight, easeInOutSine);
 		}
 	}
 
-	/** Animate a player swing */
+	/**
+	 * Animate a player swing.
+	 */
 	playSwing(): void {
-		const constructor = this.constructor as typeof PlayerAnimation;
-
-		if (constructor.swingDisabledAnimations.includes(this._activeAnimation)) {
-			return;
-		}
+		if (!this.allowedActions.swing) return;
+		if (!this.supportedActions.swing) return;
 
 		if (!this._swingActive && !this._swingCooldown) {
 			this._swingActive = true;
 			this._swingTime = 0;
 			this._swingCooldown = true;
+			this.setState("Swinging", true);
 		}
 	}
 
-	/** Whether a swing animation is currently playing. */
+	/**
+	 * Whether a swing animation is currently playing.
+	 */
 	get isSwinging(): boolean {
 		return this._swingActive;
 	}
 
+	/**
+	 * Animates a single swing.
+	 * @param player - The player object.
+	 * @param delta - Scaled time elapsed since last call.
+	 */
 	animateSwing(player: PlayerObject, delta: number): void {
 		if (!this._swingActive) return;
 
@@ -312,41 +355,37 @@ export abstract class PlayerAnimation {
 		const p = clamp01(this._swingTime / this._swingDuration);
 		const envelope = Math.sin(p * Math.PI);
 
-		// Right Arm
-		const basicArmRotationZ = 0.01 * Math.PI + 0.06;
-		const rightArm = player.skin.rightArm;
-		rightArm.offsetRotation.x = (-0.4537860552 * 2 + 2 * Math.sin(t + Math.PI) * 0.3) * envelope;
-		rightArm.offsetRotation.z = (-Math.cos(t) * 0.403 + basicArmRotationZ) * envelope;
-
 		// Body
 		player.skin.body.offsetRotation.y += -Math.cos(t) * 0.2 * envelope;
 
-		// Left Arm
-		const constructor = this.constructor as typeof PlayerAnimation;
+		// Arms
+		const armZ = 0.01 * Math.PI + 0.06;
 
-		if (!constructor.swingLeftArmDisabledAnimation.includes(this._activeAnimation)) {
-			const leftArm = player.skin.leftArm;
-			leftArm.offsetRotation.x += Math.sin(t + Math.PI) * 0.077 * envelope;
-			leftArm.offsetPosition.z += Math.cos(t) * 0.6 * envelope;
-			leftArm.offsetPosition.x += -Math.cos(t) * 0.1 * envelope;
-		}
+		player.skin.rightArm.offsetRotation.x = (-0.45 * 2 + 2 * Math.sin(t + Math.PI) * 0.3) * envelope;
+		player.skin.rightArm.offsetRotation.z = (-Math.cos(t) * 0.4 + armZ) * envelope;
+
+		player.skin.leftArm.offsetRotation.x += Math.sin(t + Math.PI) * 0.077 * envelope;
+		player.skin.leftArm.offsetPosition.z += Math.cos(t) * 0.6 * envelope;
+		player.skin.leftArm.offsetPosition.x += -Math.cos(t) * 0.1 * envelope;
 
 		if (p >= 1) {
 			this._swingActive = false;
 			this._swingCooldown = false;
 			this._swingTime = 0;
+			this.setState("Swinging", false);
 		}
 	}
 
-	/** Animate a player crouch */
+	/**
+	 * Animate a player crouch.
+	 * @param crouch - The player crouch state.
+	 */
 	playCrouch(crouch: boolean = !this._crouchActive): void {
-		const constructor = this.constructor as typeof PlayerAnimation;
-
-		if (constructor.crouchDisabledAnimations.includes(this._activeAnimation)) {
-			return;
-		}
+		if (!this.allowedActions.crouch) return;
+		if (!this.supportedActions.crouch) return;
 
 		this._crouchActive = crouch;
+		this.setState("Crouching", crouch);
 	}
 
 	/** Whether a crouch animation is currently playing. */
@@ -354,20 +393,25 @@ export abstract class PlayerAnimation {
 		return this._crouchActive;
 	}
 
+	/**
+	 * Animates a crouch.
+	 * @param player - The player object.
+	 * @param _delta - Scaled time elapsed since last call.
+	 */
 	animateCrouch(player: PlayerObject, _delta: number): void {
 		// nothing to do, we're standing and we already reset the pose
 		if (!this._crouchActive && !this._crouchWasActive) return;
 
-		const s = this._crouchActive ? 1 : 0;
+		const state = this._crouchActive ? 1 : 0;
 
-		player.skin.body.offsetRotation.x += 0.4537860552 * s;
-		player.skin.body.offsetPosition.y += -2.103677462 * s;
-		player.skin.body.offsetPosition.z += (-3.4500310377 + 1.3256181) * s;
+		player.skin.body.offsetRotation.x += 0.45 * state;
+		player.skin.body.offsetPosition.y += -2.1 * state;
+		player.skin.body.offsetPosition.z += (-3.45 + 1.33) * state;
 
-		player.skin.head.offsetPosition.y += -3.618325234674 * s;
+		player.skin.head.offsetPosition.y += -3.62 * state;
 
 		// Legs
-		const legZ = -3.4500310377 * s;
+		const legZ = -3.45 * state;
 		player.skin.leftLeg.offsetPosition.z += legZ;
 		player.skin.rightLeg.offsetPosition.z += legZ;
 
@@ -376,23 +420,23 @@ export abstract class PlayerAnimation {
 		player.skin.rightArm.offsetRotation.x += Math.PI - 3.2;
 
 		// Cape
-		player.cape.position.y = 6 - 1.851236166577372 * s;
-		player.cape.rotation.x = (10.8 * Math.PI) / 180 + 0.294220265771 * s;
-		player.cape.position.z = -2 + 3.786619432 * s - 3.4500310377 * s;
+		player.cape.position.y = 6 - 1.85 * state;
+		player.cape.rotation.x = (10.8 * Math.PI) / 180;
+		player.cape.position.z = -2 + 3.79 * state - 3.45 * state;
 
 		// Elytra
 		player.elytra.position.x = player.cape.position.x;
 		player.elytra.position.y = player.cape.position.y;
 		player.elytra.position.z = player.cape.position.z;
 		player.elytra.rotation.x = player.cape.rotation.x - (10.8 * Math.PI) / 180;
-		player.elytra.leftWing.rotation.z = 0.26179944 + 0.4582006 * s;
-		player.elytra.leftWing.rotation.y = 0.3 * s;
+		player.elytra.leftWing.rotation.z = 0.26 + 0.46 * state;
+		player.elytra.leftWing.rotation.y = 0.3 * state;
 		player.elytra.updateRightWing();
 
 		// Wings
-		player.wings.position.y = 8 - 1.851236166577372 * s;
-		player.wings.rotation.x = (10.8 * Math.PI) / 180 + 0.294220265771 * s;
-		player.wings.position.z = -2 + 3.786619432 * s - 3.4500310377 * s;
+		player.wings.position.y = 8 - 1.85 * state;
+		player.wings.rotation.x = (10.8 * Math.PI) / 180 + 0.3 * state;
+		player.wings.position.z = -2 + 3.79 * state - 3.45 * state;
 
 		this._crouchWasActive = this._crouchActive;
 	}
@@ -436,20 +480,28 @@ export class IdleAnimation extends PlayerAnimation {
 		player.skin.leftArm.originRotation.x = crouchOffset;
 		player.skin.rightArm.originRotation.x = crouchOffset;
 
-		const baseArmZ = Math.PI * 0.02;
-		player.skin.leftArm.originRotation.z = sin * 0.03 + baseArmZ;
-		player.skin.rightArm.originRotation.z = -sin * 0.03 - baseArmZ;
+		const armZ = Math.PI * 0.02;
+		player.skin.leftArm.originRotation.z = sin * 0.03 + armZ;
+		player.skin.rightArm.originRotation.z = -sin * 0.03 - armZ;
 
-		const baseArmX = Math.PI * 0.01;
-		player.skin.leftArm.originRotation.x = sin * 0.03 + baseArmX;
-		player.skin.rightArm.originRotation.x = -sin * 0.03 - baseArmX;
+		const armX = Math.PI * 0.01;
+		player.skin.leftArm.originRotation.x = sin * 0.03 + armX;
+		player.skin.rightArm.originRotation.x = -sin * 0.03 - armX;
 
 		// Wings
 		this.animateWings(player, this.progress * Math.PI);
 	}
 }
 
-export class WalkingAnimation extends PlayerAnimation {
+export class WalkAnimation extends PlayerAnimation {
+	protected override get supportedActions(): Readonly<AnimationActions> {
+		return {
+			jump: false,
+			swing: true,
+			crouch: true,
+		};
+	}
+
 	protected animate(player: PlayerObject): void {
 		const crouching = this.hasState("Crouching");
 		const crouchMultiplier = crouching ? 0.6 : 1.2;
@@ -475,175 +527,219 @@ export class WalkingAnimation extends PlayerAnimation {
 	}
 }
 
-export class RunningAnimation extends PlayerAnimation {
-	protected animate(player: PlayerObject): void {
-		const t = this.progress * 12;
+export class FlyAnimation extends PlayerAnimation {
+	protected override get supportedActions(): Readonly<AnimationActions> {
+		return {
+			jump: false,
+			swing: true,
+			crouch: false,
+		};
+	}
 
+	protected animate(player: PlayerObject): void {
+		const t = this.progress * 6;
 		const sin = Math.sin(t);
 
-		// Legs
-		player.skin.leftLeg.originRotation.x = sin * 1.3;
-		player.skin.rightLeg.originRotation.x = Math.sin(t + Math.PI) * 1.3;
+		player.rotation.x = Math.PI / 2;
+		player.skin.head.originRotation.x = -Math.PI / 4;
 
 		// Arms
-		player.skin.leftArm.originRotation.x = Math.sin(t + Math.PI) * 1.5;
-		player.skin.rightArm.originRotation.x = sin * 1.5;
+		player.skin.leftArm.originRotation.x = -sin / 4;
+		player.skin.rightArm.originRotation.x = sin / 4;
 
-		const baseArmZ = Math.PI * 0.02;
-		player.skin.leftArm.originRotation.z = sin * 0.03 + baseArmZ;
-		player.skin.rightArm.originRotation.z = -sin * 0.03 - baseArmZ;
+		// Legs
+		player.skin.leftLeg.originRotation.x = sin / 4;
+		player.skin.rightLeg.originRotation.x = -sin / 4;
 
-		const basicCapeRotationX = Math.PI * 0.3;
-		player.cape.rotation.x = Math.sin(t * 2) * 0.1 + basicCapeRotationX;
+		// Elytra
+		const elytraX = 0.35;
+		const elytraZ = Math.PI / 2;
 
-		// What about head shaking?
-		// You shouldn't glance right and left when running dude :P
-
-		this.animateWings(player, this.progress * Math.PI);
-	}
-}
-
-function clamp(num: number, min: number, max: number): number {
-	return num <= min ? min : num >= max ? max : num;
-}
-
-export class FlyingAnimation extends PlayerAnimation {
-	protected animate(player: PlayerObject): void {
-		const t = this.progress > 0 ? this.progress * 20 : 0;
-
-		const startProgress = clamp((t * t) / 100, 0, 1);
-
-		player.rotation.x = (startProgress * Math.PI) / 2;
-		player.skin.head.originRotation.x = startProgress > 0.5 ? Math.PI / 4 - player.rotation.x : 0;
-
-		const basicArmRotationZ = Math.PI * 0.25 * startProgress;
-		player.skin.leftArm.originRotation.z = basicArmRotationZ;
-		player.skin.rightArm.originRotation.z = -basicArmRotationZ;
-
-		const elytraRotationX = 0.34906584;
-		const elytraRotationZ = Math.PI / 2;
-		const interpolation = Math.pow(0.9, t);
-
-		player.elytra.leftWing.rotation.x = elytraRotationX + interpolation * (0.2617994 - elytraRotationX);
-		player.elytra.leftWing.rotation.z = elytraRotationZ + interpolation * (0.2617994 - elytraRotationZ);
+		player.elytra.leftWing.rotation.x = elytraX;
+		player.elytra.leftWing.rotation.z = elytraZ;
 		player.elytra.updateRightWing();
 
 		this.animateWings(player, this.progress * Math.PI);
 	}
 }
 
-export class SwimAnimation extends PlayerAnimation {
-	private lock: boolean = false;
+export class SitAnimation extends PlayerAnimation {
+	protected override get supportedActions(): Readonly<AnimationActions> {
+		return {
+			jump: false,
+			swing: true,
+			crouch: false,
+		};
+	}
 
-	protected animate(player: PlayerObject): void {
-		if (this.progress === 0) {
-			this.lock = false;
-		}
-		const period = 1.3;
-		const t = this.progress % period;
-		const phase = t / period;
-		// keyframe timing points
-		const times = [0, 0.7 / period, 1.1 / period, 1.0];
-		const leftEulerDeg = [
-			{ z: 180, y: 180, x: 0 },
-			{ z: 287.2, y: 180, x: 0 },
-			{ z: 180, y: 180, x: 90 },
-			{ z: 180, y: 180, x: 0 },
-		];
-		const rightEulerDeg = [
-			{ z: -180, y: 180, x: 0 },
-			{ z: -287.2, y: 180, x: 0 },
-			{ z: -180, y: 180, x: 90 },
-			{ z: -180, y: 180, x: 0 },
-		];
+	protected animate(player: PlayerObject, _delta: number): void {
+		const t = this.progress * 2;
+		const sin = Math.sin(t);
 
-		const toRad = Math.PI / 180;
+		player.skin.head.originPosition.y = -10;
+		player.skin.body.originPosition.y = -10;
 
-		function eulerZYXToQuat(z: number, y: number, x: number) {
-			const qz = new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), z);
-			const qy = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), y);
-			const qx = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), x);
-			return qx.multiply(qy).multiply(qz);
-		}
+		player.skin.leftLeg.originPosition.y = -10;
+		player.skin.leftLeg.offsetRotation.x = -Math.PI / 2 + 0.2;
+		player.skin.leftLeg.offsetRotation.z = 0.2;
 
-		const leftQuats = leftEulerDeg.map(e => eulerZYXToQuat(e.z * toRad, e.y * toRad, e.x * toRad));
-		const rightQuats = rightEulerDeg.map(e => eulerZYXToQuat(e.z * toRad, e.y * toRad, e.x * toRad));
+		player.skin.rightLeg.offsetPosition.y = -10;
+		player.skin.rightLeg.offsetRotation.x = -Math.PI / 2 + 0.2;
+		player.skin.rightLeg.offsetRotation.z = -0.2;
 
-		function findSegment(t: number) {
-			for (let i = 0; i < times.length - 1; i++) {
-				if (t >= times[i] && t <= times[i + 1]) {
-					return { i, t0: times[i], t1: times[i + 1] };
-				}
-			}
-			return { i: times.length - 2, t0: times[times.length - 2], t1: times[times.length - 1] };
-		}
+		const armZ = Math.PI * 0.02;
+		player.skin.leftArm.originRotation.z = sin * 0.03 + armZ;
+		player.skin.rightArm.originRotation.z = -sin * 0.03 - armZ;
 
-		const seg = findSegment(phase);
-		const p = (phase - seg.t0) / (seg.t1 - seg.t0);
-		const i = seg.i;
-		if (!this.lock) {
-			const k = 1.3;
-			if (i == 0 && p * k < 1) {
-				player.position.y = -5 * p * k;
-				player.rotation.x = (1.3 * p * Math.PI) / 2;
-				player.skin.head.originRotation.x = (-Math.PI / 4) * p * k;
-				player.cape.rotation.x = (Math.PI / 4) * p * k;
-			} else {
-				this.lock = true;
-			}
-		}
-		const qLeft = new Quaternion().copy(leftQuats[i]).slerp(leftQuats[i + 1], p);
-		const qRight = new Quaternion().copy(rightQuats[i]).slerp(rightQuats[i + 1], p);
-
-		player.skin.leftArm.setOriginQuaternion(qLeft);
-		player.skin.rightArm.setOriginQuaternion(qRight);
-
-		const legFreq = 390 * toRad;
-		const legAmp = 17.2 * toRad;
-		const leftLegX = legAmp * Math.cos(this.progress * legFreq + Math.PI);
-		const rightLegX = legAmp * Math.cos(this.progress * legFreq);
-
-		player.skin.leftLeg.originRotation.x = leftLegX;
-		player.skin.leftLeg.originRotation.y = -0.1 * toRad;
-		player.skin.leftLeg.originRotation.z = -0.1 * toRad;
-		player.skin.rightLeg.originRotation.x = rightLegX;
-		player.skin.rightLeg.originRotation.y = 0.1 * toRad;
-		player.skin.rightLeg.originRotation.z = 0.1 * toRad;
+		const armX = Math.PI * 0.01;
+		player.skin.leftArm.originRotation.x = sin * 0.03 + armX - 0.6;
+		player.skin.rightArm.originRotation.x = -sin * 0.03 - armX - 0.6;
 
 		this.animateWings(player, this.progress * Math.PI);
 	}
 }
 
-export class BreathingAnimation extends PlayerAnimation {
+// TODO - would be dope if we supported molang animations so we can jump rip straight out of bedrock
+export class SwimAnimation extends PlayerAnimation {
+	protected override get supportedActions(): Readonly<AnimationActions> {
+		return {
+			jump: false,
+			swing: false,
+			crouch: false,
+		};
+	}
+
 	protected animate(player: PlayerObject): void {
-		const t = this.progress * 1.5;
-		const breath = Math.sin(t);
+		const t = this.progress * 6;
+		const sin = Math.sin(t);
+
+		const period = 1.3;
+		const phase = (this.progress % period) / period;
+
+		player.rotation.x = Math.PI / 2;
+		player.skin.head.originRotation.x = -Math.PI / 4;
+
+		player.cape.rotation.x = Math.PI / 4;
 
 		// Arms
-		const baseArmZ = Math.PI * 0.02;
+		const leftArm = sampleEulerKeyframes(swimLeftArm, phase);
+		const rightArm = sampleEulerKeyframes(swimRightArm, phase);
 
-		player.skin.leftArm.originRotation.x = breath * 0.03 + Math.PI * 0.04;
-		player.skin.rightArm.originRotation.x = breath * 0.03 - Math.PI * 0.03;
+		player.skin.leftArm.originRotation.x = leftArm.x;
+		player.skin.leftArm.originRotation.y = leftArm.y;
+		player.skin.leftArm.originRotation.z = leftArm.z;
 
-		player.skin.leftArm.originRotation.z = baseArmZ + breath * 0.02 + Math.PI * 0.02;
-		player.skin.rightArm.originRotation.z = -baseArmZ - breath * 0.02 - Math.PI * 0.02;
+		player.skin.rightArm.originRotation.x = rightArm.x;
+		player.skin.rightArm.originRotation.y = rightArm.y;
+		player.skin.rightArm.originRotation.z = rightArm.z;
+
+		// Legs
+		player.skin.leftLeg.originRotation.x = sin / 4;
+		player.skin.rightLeg.originRotation.x = -sin / 4;
+
+		// Wings
+		this.animateWings(player, this.progress * Math.PI);
+	}
+}
+
+// Not a vanilla animation, this is to make wardrobe in the launcher more alive.
+export class WardrobeIdleAnimation extends PlayerAnimation {
+	protected override get supportedActions(): Readonly<AnimationActions> {
+		return {
+			jump: false,
+			swing: true,
+			crouch: false,
+		};
+	}
+
+	protected animate(player: PlayerObject): void {
+		const t = this.progress * 1.5;
+		const sin = Math.sin(t);
+
+		const period = 3.0;
+		const phase = (this.progress % period) / period;
+
+		// Arms
+		const armZ = Math.PI * 0.02;
+
+		player.skin.leftArm.originRotation.x = sin * 0.03 + Math.PI * 0.04;
+		player.skin.rightArm.originRotation.x = sin * 0.03 - Math.PI * 0.03;
+
+		player.skin.leftArm.originRotation.z = armZ + sin * 0.02 + Math.PI * 0.02;
+		player.skin.rightArm.originRotation.z = -armZ - sin * 0.02 - Math.PI * 0.02;
 
 		// Body
-		player.skin.body.originRotation.x = -Math.PI * 0.02 + breath * 0.03;
-		player.skin.body.originPosition.z = -0.5
+		const body = sampleEulerKeyframes(breathing, phase);
+
+		player.skin.body.originRotation.x = body.x;
+		player.skin.body.originRotation.y = body.y;
+		player.skin.body.originRotation.z = body.z;
 
 		// Head
-		player.skin.head.originRotation.x = Math.PI * 0.01 - breath * 0.015;
-		player.skin.head.originRotation.y = breath * 0.04;
-		player.skin.head.originPosition.z = -1;
+		player.skin.head.originRotation.x = -Math.PI * 0.01 - sin * 0.015;
+		player.skin.head.originRotation.y = sin * 0.04;
+		player.skin.head.originPosition.z = -0.5;
 
 		// Legs
 		player.skin.leftLeg.originRotation.y = Math.PI * 0.08;
 		player.skin.leftLeg.originRotation.z = Math.PI * 0.02;
+
 		player.skin.rightLeg.originRotation.y = -Math.PI * 0.08;
 		player.skin.rightLeg.originRotation.x = Math.PI * 0.08;
 
 		// Wings
 		this.animateWings(player, this.progress * Math.PI);
+	}
+}
+
+// Not a vanilla animation, this is to make wardrobe in the launcher more alive.
+// TODO - this looks off & needs improvement
+export class WardrobeIdle2Animation extends PlayerAnimation {
+	protected override get supportedActions(): Readonly<AnimationActions> {
+		return {
+			jump: false,
+			swing: false,
+			crouch: false,
+		};
+	}
+
+	protected animate(player: PlayerObject): void {
+		const t = this.progress * 1.5;
+		const breath = Math.sin(t);
+
+		// Player
+		player.rotation.y = Math.PI / 1.2;
+
+		// Body
+		player.skin.body.originPosition.z = -0.5;
+		player.skin.body.originRotation.x = -Math.PI * 0.02 + breath * 0.03;
+		player.skin.body.originRotation.y = 0.1;
+		player.skin.body.originRotation.z = 0.1;
+
+		// Head
+		player.skin.head.originRotation.x = -Math.PI * 0.05 - breath * 0.015;
+		player.skin.head.originRotation.y = -Math.PI / 2.2 + breath * 0.04;
+		player.skin.head.originPosition.z = -1;
+
+		// Legs
+		player.skin.leftLeg.originRotation.y = Math.PI * 0.08;
+		player.skin.leftLeg.originRotation.x = Math.PI * 0.2;
+
+		player.skin.rightLeg.originRotation.y = -Math.PI * 0.1;
+		player.skin.rightLeg.originRotation.x = -Math.PI * 0.02;
+		player.skin.rightLeg.originRotation.z = Math.PI * 0.02;
+
+		// Arms
+		const armZ = Math.PI * 0.08;
+
+		player.skin.leftArm.originRotation.x = breath * 0.03 + Math.PI * 0.04;
+		player.skin.leftArm.originRotation.z = armZ + breath * 0.02 + Math.PI * 0.02;
+
+		player.skin.rightArm.originRotation.x = breath * 0.03 - Math.PI * 0.03;
+		player.skin.rightArm.originRotation.z = -armZ - breath * 0.02 - Math.PI * 0.02;
+		player.skin.rightArm.originRotation.y = -1;
+
+		// Cape
+		player.cape.rotation.x = 0.2;
 	}
 }

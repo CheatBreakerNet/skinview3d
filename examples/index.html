@@ -15,11 +15,18 @@
 				box-sizing: border-box;
 			}
 
+			#canvas_warp {
+				height: fit-content;
+				position: sticky;
+				top: 20px;
+				display: flex;
+				flex-direction: column;
+				gap: 24px;
+			}
+
 			#skin_container {
 				width: 400px;
 				height: 600px;
-				position: sticky;
-				top: 20px;
 				align-self: flex-start;
 			}
 
@@ -43,6 +50,7 @@
 				.controls {
 					padding-right: 0;
 				}
+
 				#canvas_warp {
 					width: 100%;
 					top: 0px;
@@ -69,6 +77,20 @@
 				margin: 5px 0;
 			}
 
+			.state_badges {
+				display: flex;
+				gap: 8px;
+			}
+
+			.badge {
+				padding: 3px 2px;
+				border: 1px solid black;
+			}
+
+			.badge.active {
+				border: 2px solid red;
+			}
+
 			footer {
 				position: fixed;
 				bottom: 0;
@@ -85,7 +107,17 @@
 	<body>
 		<div id="canvas_warp">
 			<canvas id="skin_container"></canvas>
+
+			<span id="fps_counter">-- fps</span>
+
+			<div id="state_badges">
+				<span class="badge" data-state="Idle">idle</span>
+				<span class="badge" data-state="Swinging">swinging</span>
+				<span class="badge" data-state="Jumping">jumping</span>
+				<span class="badge" data-state="Crouching">crouching</span>
+			</div>
 		</div>
+
 		<div class="controls">
 			<button id="reset_all" type="button" class="control">Reset All</button>
 
@@ -97,7 +129,7 @@
 				</div>
 				<div>
 					<label class="control"
-						>FOV: <input id="fov" type="number" value="70" step="1" min="1" max="179" size="2"
+						>FOV: <input id="fov" type="number" value="50" step="1" min="1" max="170" size="2"
 					/></label>
 					<label class="control"
 						>Zoom: <input id="zoom" type="number" value="0.90" step="0.01" min="0.01" max="2.00" size="4"
@@ -129,10 +161,16 @@
 					<label><input type="radio" id="animation_none" name="animation" value="" checked /> None</label>
 					<label><input type="radio" id="animation_idle" name="animation" value="idle" /> Idle</label>
 					<label><input type="radio" id="animation_walk" name="animation" value="walk" /> Walk</label>
-					<label><input type="radio" id="animation_run" name="animation" value="run" /> Run</label>
 					<label><input type="radio" id="animation_fly" name="animation" value="fly" /> Fly</label>
 					<label><input type="radio" id="animation_swim" name="animation" value="swim" /> Swim</label>
-					<label><input type="radio" id="animation_swim" name="animation" value="breathing" /> Breathing</label>
+					<label><input type="radio" id="animation_sit" name="animation" value="sit" /> Sit</label>
+					<label
+						><input type="radio" id="animation_wardrobe_idle" name="animation" value="wardrobe_idle" /> (CB) Idle</label
+					>
+					<label
+						><input type="radio" id="animation_wardrobe_idle2" name="animation" value="wardrobe_idle2" /> (CB)
+						Idle2</label
+					>
 				</div>
 				<label class="control">Speed: <input id="animation_speed" type="number" value="1" step="0.1" size="3" /></label>
 				<button id="animation_pause_resume" type="button" class="control">Pause / Resume</button>

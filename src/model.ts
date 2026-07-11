@@ -70,14 +70,21 @@ function setCapeUVs(box: BoxGeometry, u: number, v: number, width: number, heigh
 }
 
 /**
- * A bone is an animatable joint
+ * A Bone is any node that should support layered, animatable position/rotation. Without
+ * being limited to the player's actual skeletal joints.
+ *
  * Every bone has three layers of transform that are composed together each frame via {@link commit}:
  * - `base*`    - the rest-pose offset from the parent. Set once, never touched by animations.
  * - `origin*`  - written by the currently active "pose" animation
  * - `offset*`  - written by transient modifier states (basically swinging and jumping)
+ *
+ * Notice: because `commit()` recomputes the underlying position/rotation/quaternion from the
+ * layers above, those properties are effectively read-only outputs on a bone - anything written above it
+ * will be overwritten next time `commit()` runs.
  */
 export class Bone extends Group {
 	readonly basePosition: Vector3 = new Vector3();
+	readonly baseRotation: Euler = new Euler();
 
 	readonly originPosition: Vector3 = new Vector3();
 	readonly originRotation: Euler = new Euler();
@@ -87,8 +94,26 @@ export class Bone extends Group {
 
 	private originQuaternionValue: Quaternion | null = null;
 
+	// Reused across every Bone's commit() call to avoid a per-frame, per-bone
+	// allocation. This is safe as long as commit() finishes using them before
+	// returning (it does, and commit() never re-enters itself)
+	private static readonly tempQuatA = new Quaternion();
+	private static readonly tempQuatB = new Quaternion();
+
 	setBasePosition(x: number, y: number, z: number): void {
 		this.basePosition.set(x, y, z);
+	}
+
+	setBaseRotation(x: number, y: number, z: number): void {
+		this.baseRotation.set(x, y, z);
+	}
+
+	setOriginPosition(x: number, y: number, z: number): void {
+		this.originPosition.set(x, y, z);
+	}
+
+	setOffsetPosition(x: number, y: number, z: number): void {
+		this.offsetPosition.set(x, y, z);
 	}
 
 	// used by poses that are expressed as quaternions (like swimming)
@@ -100,19 +125,45 @@ export class Bone extends Group {
 		this.originQuaternionValue.copy(q);
 	}
 
+	/**
+	 * Resets the rest-pose (base) position and rotation of this bone.
+	 */
+	resetBase(): void {
+		this.basePosition.set(0, 0, 0);
+		this.baseRotation.set(0, 0, 0);
+	}
+
+	/**
+	 * Resets the origin position and rotation of this bone.
+	 */
 	resetOrigin(): void {
 		this.originPosition.set(0, 0, 0);
 		this.originRotation.set(0, 0, 0);
 		this.originQuaternionValue = null;
 	}
 
+	/**
+	 * Resets the offset position and rotation of this bone.
+	 */
 	resetOffset(): void {
 		this.offsetPosition.set(0, 0, 0);
 		this.offsetRotation.set(0, 0, 0);
 	}
 
-	// TODO: still needs some improvement
-	// composes base + origin + offset into the actual position and rotation of this bone
+	/**
+	 * Resets base + origin + offset all at once, and commits the result.
+	 */
+	resetAll(): void {
+		this.resetBase();
+		this.resetOrigin();
+		this.resetOffset();
+		this.commit();
+	}
+
+	/**
+	 * Composes a base + origin + offset into the actual position and rotation of this bone.
+	 * This is the only place that writes to the underlying position/rotation/quaternion properties.
+	 */
 	commit(): void {
 		this.position.set(
 			this.basePosition.x + this.originPosition.x + this.offsetPosition.x,
@@ -120,17 +171,42 @@ export class Bone extends Group {
 			this.basePosition.z + this.originPosition.z + this.offsetPosition.z
 		);
 
+		const hasBaseRotation = this.baseRotation.x !== 0 || this.baseRotation.y !== 0 || this.baseRotation.z !== 0;
+
 		if (this.originQuaternionValue !== null) {
-			const offsetQuat = new Quaternion().setFromEuler(this.offsetRotation);
-			this.quaternion.copy(this.originQuaternionValue).multiply(offsetQuat);
+			// origin is expressed as a quaternion (like swimming) offset is
+			// still an Euler delta layered on top of it.
+			Bone.tempQuatA.setFromEuler(this.offsetRotation);
+			Bone.tempQuatB.copy(this.originQuaternionValue).multiply(Bone.tempQuatA);
+
+			if (hasBaseRotation) {
+				Bone.tempQuatA.setFromEuler(this.baseRotation);
+				this.quaternion.copy(Bone.tempQuatA).multiply(Bone.tempQuatB);
+			} else {
+				this.quaternion.copy(Bone.tempQuatB);
+			}
 		} else {
 			this.rotation.set(
-				this.originRotation.x + this.offsetRotation.x,
-				this.originRotation.y + this.offsetRotation.y,
-				this.originRotation.z + this.offsetRotation.z
+				this.baseRotation.x + this.originRotation.x + this.offsetRotation.x,
+				this.baseRotation.y + this.originRotation.y + this.offsetRotation.y,
+				this.baseRotation.z + this.originRotation.z + this.offsetRotation.z
 			);
 		}
 	}
+}
+
+/**
+ * Recursively commits every {@link Bone} in the given subtree (including the
+ * root itself, if it is a Bone). Call order doesn't matter: each bone's
+ * commit() only depends on its own base/origin/offset values, never on its
+ * parent's committed transform.
+ */
+export function commitBones(root: Object3D): void {
+	root.traverse(obj => {
+		if (obj instanceof Bone) {
+			obj.commit();
+		}
+	});
 }
 
 /**
@@ -147,7 +223,7 @@ export class BodyPart extends Bone {
 	}
 }
 
-export class SkinObject extends Group {
+export class SkinObject extends Bone {
 	// body parts
 	readonly head: BodyPart;
 	readonly body: BodyPart;
@@ -377,16 +453,20 @@ export class SkinObject extends Group {
 			bone.commit();
 		}
 	}
+
 	resetJoints(): void {
-		for (const bone of this.bones) {
-			bone.resetOrigin();
-			bone.resetOffset();
-			bone.commit();
-		}
+		this.traverse(obj => {
+			if (obj instanceof Bone) {
+				obj.resetOrigin();
+				obj.resetOffset();
+			}
+		});
+
+		this.commitPose();
 	}
 }
 
-export class CapeObject extends Group {
+export class CapeObject extends Bone {
 	readonly cape: Mesh;
 
 	private material: MeshStandardMaterial;
@@ -420,7 +500,7 @@ export class CapeObject extends Group {
 	}
 }
 
-export class ElytraObject extends Group {
+export class ElytraObject extends Bone {
 	readonly leftWing: Group;
 	readonly rightWing: Group;
 
@@ -489,7 +569,7 @@ export class ElytraObject extends Group {
 	}
 }
 
-export class WingsObject extends Group {
+export class WingsObject extends Bone {
 	readonly leftWing: Group;
 	readonly rightWing: Group;
 
@@ -587,7 +667,7 @@ export class WingsObject extends Group {
 	}
 }
 
-export class EarsObject extends Group {
+export class EarsObject extends Bone {
 	readonly rightEar: Mesh;
 	readonly leftEar: Mesh;
 

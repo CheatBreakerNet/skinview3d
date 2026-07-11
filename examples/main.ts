@@ -6,16 +6,22 @@ import "./style.css";
 
 const skinParts = ["head", "body", "rightArm", "leftArm", "rightLeg", "leftLeg"];
 const skinLayers = ["innerLayer", "outerLayer"];
+const allStates = ["Idle", "Swinging", "Jumping", "Crouching"];
+
 const availableAnimations = {
 	idle: new skinview3d.IdleAnimation(),
-	walk: new skinview3d.WalkingAnimation(),
-	run: new skinview3d.RunningAnimation(),
-	fly: new skinview3d.FlyingAnimation(),
+	walk: new skinview3d.WalkAnimation(),
+	fly: new skinview3d.FlyAnimation(),
 	swim: new skinview3d.SwimAnimation(),
-	breathing: new skinview3d.BreathingAnimation()
+	sit: new skinview3d.SitAnimation(),
+	wardrobe_idle: new skinview3d.WardrobeIdleAnimation(),
+	wardrobe_idle2: new skinview3d.WardrobeIdle2Animation(),
 };
 
 let skinViewer: skinview3d.SkinViewer;
+
+// id of the addon animation added via `animation.addAnimation()`, if any is active
+let spinAddonId: number | undefined;
 
 function obtainTextureUrl(id: string): string {
 	const urlInput = document.getElementById(id) as HTMLInputElement;
@@ -230,6 +236,25 @@ function updateBackground(): void {
 	}
 }
 
+function updateStateBadges(): void {
+	const active = skinViewer.animation ? skinViewer.animation.states : new Set(["Idle"]);
+
+	for (const state of allStates) {
+		const badge = document.querySelector<HTMLElement>(`.badge[data-state="${state}"]`);
+
+		if (!badge) continue;
+		badge.classList.toggle("active", active.has(state as never));
+	}
+
+	const fpsCounter = document.getElementById("fps_counter");
+
+	if (fpsCounter) {
+		fpsCounter.textContent = skinViewer.renderPaused ? "paused" : "live";
+	}
+
+	requestAnimationFrame(updateStateBadges);
+}
+
 function reloadNameTag(): void {
 	const text = (document.getElementById("nametag_text") as HTMLInputElement)?.value;
 	if (text === "") {
@@ -305,6 +330,11 @@ function initializeControls(): void {
 		el.addEventListener("change", e => {
 			const target = e.target as HTMLInputElement;
 
+			// switching the base animation invalidates any addon we had attached
+			spinAddonId = undefined;
+			const spinCheckbox = document.getElementById("spin_addon") as HTMLInputElement;
+			if (spinCheckbox) spinCheckbox.checked = false;
+
 			if (target.value === "") {
 				skinViewer.animation = null;
 			} else {
@@ -314,6 +344,8 @@ function initializeControls(): void {
 					skinViewer.animation.speed = Number(animationSpeed.value);
 				}
 			}
+
+			syncAllowedActionCheckboxes();
 		});
 	}
 
@@ -452,6 +484,16 @@ function initializeControls(): void {
 	updateBackground();
 }
 
+function syncAllowedActionCheckboxes(): void {
+	const allow = skinViewer.animation?.allowedActions ?? { jump: true, swing: true, crouch: true };
+	const jump = document.getElementById("allow_jump") as HTMLInputElement;
+	const swing = document.getElementById("allow_swing") as HTMLInputElement;
+	const crouch = document.getElementById("allow_crouch") as HTMLInputElement;
+	if (jump) jump.checked = allow.jump;
+	if (swing) swing.checked = allow.swing;
+	if (crouch) crouch.checked = allow.crouch;
+}
+
 function initializeViewer(): void {
 	const skinContainer = document.getElementById("skin_container") as HTMLCanvasElement;
 	if (!skinContainer) {
@@ -461,8 +503,6 @@ function initializeViewer(): void {
 	skinViewer = new skinview3d.SkinViewer({
 		canvas: skinContainer,
 	});
-
-	skinViewer.enableShadow();
 
 	const canvasWidth = document.getElementById("canvas_width") as HTMLInputElement;
 	const canvasHeight = document.getElementById("canvas_height") as HTMLInputElement;
@@ -517,7 +557,10 @@ function initializeViewer(): void {
 	reloadEars(true);
 	reloadPanorama();
 	reloadNameTag();
+
+	syncAllowedActionCheckboxes();
 }
 
 initializeViewer();
 initializeControls();
+updateStateBadges();
