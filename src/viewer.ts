@@ -1127,6 +1127,9 @@ export class SkinViewer {
 	}
 
 	dispose(): void {
+		if (this._disposed) {
+			return;
+		}
 		this._disposed = true;
 
 		this.canvas.removeEventListener("webglcontextlost", this.onContextLost, false);
@@ -1155,7 +1158,7 @@ export class SkinViewer {
 
 		this.background = null;
 
-		(this.fxaaPass.fsQuad as FullScreenQuad).dispose();
+		(this.fxaaPass.fsQuad as FullScreenQuad | undefined)?.dispose();
 	}
 
 	get disposed(): boolean {
