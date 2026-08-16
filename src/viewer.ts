@@ -29,7 +29,7 @@ import {
 	WebGLRenderTarget,
 	FloatType,
 	DepthTexture,
-	Clock,
+	Timer,
 	Object3D,
 	ColorManagement,
 	CubeTexture,
@@ -375,7 +375,7 @@ export class SkinViewer {
 	autoRotateSpeed: number = 1.0;
 
 	private _animation: PlayerAnimation | null;
-	private clock: Clock;
+	private clock: Timer;
 
 	private animationID: number | null;
 	private onContextLost: (event: Event) => void;
@@ -514,7 +514,7 @@ export class SkinViewer {
 		this.fov = options.fov === undefined ? 50 : options.fov;
 
 		this._animation = options.animation === undefined ? null : options.animation;
-		this.clock = new Clock();
+		this.clock = new Timer();
 
 		if (options.renderPaused === true) {
 			this._renderPaused = true;
@@ -1087,6 +1087,7 @@ export class SkinViewer {
 	}
 
 	private draw(): void {
+		this.clock.update();
 		const dt = this.clock.getDelta();
 
 		if (this._animation !== null) {
@@ -1180,8 +1181,7 @@ export class SkinViewer {
 		if (this._renderPaused && this.animationID !== null) {
 			window.cancelAnimationFrame(this.animationID);
 			this.animationID = null;
-			this.clock.stop();
-			this.clock.autoStart = true;
+			this.clock.reset();
 		} else if (
 			!this._renderPaused &&
 			!this._disposed &&
@@ -1306,8 +1306,7 @@ export class SkinViewer {
 				this._nameTag.position.y = this.nameTagYOffset;
 			}
 
-			this.clock.stop();
-			this.clock.autoStart = true;
+			this.clock.reset();
 		}
 		if (animation !== null) {
 			animation.progress = 0;
