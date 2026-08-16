@@ -1,6 +1,7 @@
 {
 	"compilerOptions": {
 		"outDir": "libs",
+		"rootDir": "src",
 		"allowJs": false,
 		"allowSyntheticDefaultImports": true,
 		"allowUnreachableCode": false,
@@ -10,8 +11,8 @@
 		"esModuleInterop": true,
 		"verbatimModuleSyntax": true,
 		"isolatedModules": true,
-		"module": "nodenext",
-		"moduleResolution": "nodenext",
+		"module": "NodeNext",
+		"moduleResolution": "NodeNext",
 		"newLine": "LF",
 		"noEmitOnError": true,
 		"noUncheckedIndexedAccess": false,
@@ -24,7 +25,10 @@
 		"strict": true,
 		"stripInternal": true,
 		"target": "es2021",
-		"useDefineForClassFields": true
+		"useDefineForClassFields": true,
+		"forceConsistentCasingInFileNames": true
 	},
-	"include": ["src"]
+	"include": [
+		"src"
+	]
 }
