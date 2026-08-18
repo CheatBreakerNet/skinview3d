@@ -1,6 +1,6 @@
 import { PlayerObject } from "./model.js";
 import { easeInOutSine, easingArc, clamp01, sampleEulerKeyframes } from "./math.js";
-import { breathing, swimLeftArm, swimRightArm } from "./animation-keyframes.js";
+import { breathing, swimLeftArm, swimRightArm } from "./keyframes.js";
 
 export type PlayerState = "Idle" | "Swinging" | "Jumping" | "Crouching";
 
@@ -420,7 +420,6 @@ export abstract class PlayerAnimation {
 		player.skin.rightArm.offsetRotation.x += Math.PI - 3.2;
 
 		// Cape
-		player.cape.position.y = 6 - 1.85 * state;
 		player.cape.rotation.x = (10.8 * Math.PI) / 180;
 		player.cape.position.z = -2 + 3.79 * state - 3.45 * state;
 
@@ -599,7 +598,6 @@ export class SitAnimation extends PlayerAnimation {
 	}
 }
 
-// TODO - would be dope if we supported molang animations so we can jump rip straight out of bedrock
 export class SwimAnimation extends PlayerAnimation {
 	protected override get supportedActions(): Readonly<AnimationActions> {
 		return {
