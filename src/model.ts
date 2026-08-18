@@ -705,8 +705,6 @@ export class EarsObject extends Bone {
 
 export type BackEquipment = "cape" | "elytra" | "wings";
 
-const CapeDefaultAngle = (10.8 * Math.PI) / 180;
-
 export class PlayerObject extends Group {
 	readonly skin: SkinObject;
 	readonly cape: CapeObject;
@@ -726,7 +724,6 @@ export class PlayerObject extends Group {
 		this.cape.name = "cape";
 		this.cape.position.y = 6;
 		this.cape.position.z = -2;
-		this.cape.rotation.x = CapeDefaultAngle;
 		this.cape.rotation.y = Math.PI;
 		this.skin.body.add(this.cape);
 
@@ -775,7 +772,7 @@ export class PlayerObject extends Group {
 	resetJoints(): void {
 		this.skin.resetJoints();
 
-		this.cape.rotation.x = CapeDefaultAngle;
+		this.cape.rotation.x = 0;
 		this.cape.rotation.y = Math.PI;
 		this.cape.rotation.z = 0;
 		this.cape.position.y = 6;

@@ -1,6 +1,7 @@
 import { PlayerObject } from "./model.js";
 import { easeInOutSine, easingArc, clamp01, sampleEulerKeyframes } from "./math.js";
 import { breathing, swimLeftArm, swimRightArm } from "./keyframes.js";
+import type { Object3D } from "three";
 
 export type PlayerState = "Idle" | "Swinging" | "Jumping" | "Crouching";
 
@@ -53,6 +54,13 @@ const DefaultActions: Readonly<AnimationActions> = {
 	swing: true,
 	crouch: true,
 };
+
+const CapeAngle = (10.8 * Math.PI) / 180;
+const ArmZIdle = Math.PI * 0.02;
+const ArmXIdle = Math.PI * 0.01;
+const ArmZSwing = 0.01 * Math.PI + 0.06;
+
+const wingTipCache = new WeakMap<PlayerObject, Object3D>();
 
 /**
  * An animation which can be played on a {@link PlayerObject}.
@@ -129,8 +137,13 @@ export abstract class PlayerAnimation {
 	private readonly _states: Set<PlayerState> = new Set(["Idle"]);
 
 	private _nextId: number = 0;
-	private _addons: Map<number, (player: PlayerObject, progress: number, id: number) => void> = new Map();
-	private _addonOrigins: Map<number, number> = new Map();
+	private _addons: Map<
+		number,
+		{
+			fn: (player: PlayerObject, progress: number, id: number) => void;
+			origin: number;
+		}
+	> = new Map();
 
 	constructor() {
 		this._activeAnimation = this.constructor.name;
@@ -183,8 +196,7 @@ export abstract class PlayerAnimation {
 	addAnimation(fn: (player: PlayerObject, progress: number, id: number) => void): number {
 		const id = this._nextId++;
 
-		this._addonOrigins.set(id, this.progress);
-		this._addons.set(id, fn);
+		this._addons.set(id, { fn, origin: this.progress });
 
 		return id;
 	}
@@ -215,7 +227,6 @@ export abstract class PlayerAnimation {
 	removeAnimation(id: number | undefined): void {
 		if (id !== undefined) {
 			this._addons.delete(id);
-			this._addonOrigins.delete(id);
 		}
 	}
 
@@ -250,9 +261,9 @@ export abstract class PlayerAnimation {
 		player.skin.commitPose();
 
 		// addon callbacks run last and act directly on the player object (not bones), for example rotating
-		this._addons.forEach((fn, id) => {
-			fn(player, this.progress - (this._addonOrigins.get(id) ?? 0), id);
-		});
+		for (const [id, addon] of this._addons) {
+			addon.fn(player, this.progress - addon.origin, id);
+		}
 
 		this.progress += delta;
 	}
@@ -267,7 +278,11 @@ export abstract class PlayerAnimation {
 		player.wings.leftWing.rotation.y = -0.75;
 		player.wings.leftWing.rotation.z = -((Math.sin(wingPosition) + 0.125) * 0.8);
 
-		const leftWingTip = player.wings.leftWing.getObjectByName("wingTip");
+		let leftWingTip = wingTipCache.get(player);
+		if (!leftWingTip) {
+			leftWingTip = player.wings.leftWing.getObjectByName("wingTip");
+			if (leftWingTip) wingTipCache.set(player, leftWingTip);
+		}
 		if (leftWingTip) {
 			leftWingTip.rotation.z = -((Math.sin(wingPosition + 2.0) + 0.5) * 0.75);
 		}
@@ -359,7 +374,7 @@ export abstract class PlayerAnimation {
 		player.skin.body.offsetRotation.y += -Math.cos(t) * 0.2 * envelope;
 
 		// Arms
-		const armZ = 0.01 * Math.PI + 0.06;
+		const armZ = ArmZSwing;
 
 		player.skin.rightArm.offsetRotation.x = (-0.45 * 2 + 2 * Math.sin(t + Math.PI) * 0.3) * envelope;
 		player.skin.rightArm.offsetRotation.z = (-Math.cos(t) * 0.4 + armZ) * envelope;
@@ -420,14 +435,14 @@ export abstract class PlayerAnimation {
 		player.skin.rightArm.offsetRotation.x += Math.PI - 3.2;
 
 		// Cape
-		player.cape.rotation.x = (10.8 * Math.PI) / 180;
+		player.cape.rotation.x = CapeAngle;
 		player.cape.position.z = -2 + 3.79 * state - 3.45 * state;
 
 		// Elytra
 		player.elytra.position.x = player.cape.position.x;
 		player.elytra.position.y = player.cape.position.y;
 		player.elytra.position.z = player.cape.position.z;
-		player.elytra.rotation.x = player.cape.rotation.x - (10.8 * Math.PI) / 180;
+		player.elytra.rotation.x = player.cape.rotation.x - CapeAngle;
 		player.elytra.leftWing.rotation.z = 0.26 + 0.46 * state;
 		player.elytra.leftWing.rotation.y = 0.3 * state;
 		player.elytra.updateRightWing();
@@ -479,13 +494,13 @@ export class IdleAnimation extends PlayerAnimation {
 		player.skin.leftArm.originRotation.x = crouchOffset;
 		player.skin.rightArm.originRotation.x = crouchOffset;
 
-		const armZ = Math.PI * 0.02;
-		player.skin.leftArm.originRotation.z = sin * 0.03 + armZ;
-		player.skin.rightArm.originRotation.z = -sin * 0.03 - armZ;
+		player.skin.leftArm.originRotation.z = sin * 0.03 + ArmZIdle;
+		player.skin.rightArm.originRotation.z = -sin * 0.03 - ArmZIdle;
 
-		const armX = Math.PI * 0.01;
-		player.skin.leftArm.originRotation.x = sin * 0.03 + armX;
-		player.skin.rightArm.originRotation.x = -sin * 0.03 - armX;
+		player.skin.leftArm.originRotation.x = sin * 0.03 + ArmXIdle;
+		player.skin.rightArm.originRotation.x = -sin * 0.03 - ArmXIdle;
+
+		player.cape.rotation.x = CapeAngle;
 
 		// Wings
 		this.animateWings(player, this.progress * Math.PI);
@@ -520,6 +535,8 @@ export class WalkAnimation extends PlayerAnimation {
 		const baseArmZ = Math.PI * 0.02;
 		player.skin.leftArm.originRotation.z = sin * 0.03 + baseArmZ;
 		player.skin.rightArm.originRotation.z = -sin * 0.03 - baseArmZ;
+
+		player.cape.rotation.x = Math.PI / 4 + (sin / 16)
 
 		// Wings
 		this.animateWings(player, this.progress * Math.PI);
@@ -586,9 +603,8 @@ export class SitAnimation extends PlayerAnimation {
 		player.skin.rightLeg.offsetRotation.x = -Math.PI / 2 + 0.2;
 		player.skin.rightLeg.offsetRotation.z = -0.2;
 
-		const armZ = Math.PI * 0.02;
-		player.skin.leftArm.originRotation.z = sin * 0.03 + armZ;
-		player.skin.rightArm.originRotation.z = -sin * 0.03 - armZ;
+		player.skin.leftArm.originRotation.z = sin * 0.03 + ArmZIdle;
+		player.skin.rightArm.originRotation.z = -sin * 0.03 - ArmZIdle;
 
 		const armX = Math.PI * 0.01;
 		player.skin.leftArm.originRotation.x = sin * 0.03 + armX - 0.6;
