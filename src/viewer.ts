@@ -631,8 +631,6 @@ export class SkinViewer {
 			this.capeTexture.dispose();
 		}
 		this.capeTexture = new CanvasTexture(this.capeCanvas);
-		this.capeTexture.magFilter = NearestFilter;
-		this.capeTexture.minFilter = NearestFilter;
 		this.playerObject.cape.map = this.capeTexture;
 		this.playerObject.elytra.map = this.capeTexture;
 	}
@@ -791,8 +789,6 @@ export class SkinViewer {
 		}
 
 		this.wingsTexture = new CanvasTexture(this.wingsCanvas);
-		this.wingsTexture.magFilter = NearestFilter;
-		this.wingsTexture.minFilter = NearestFilter;
 		this.playerObject.wings.map = this.wingsTexture;
 	}
 
