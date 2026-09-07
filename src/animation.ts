@@ -448,9 +448,9 @@ export abstract class PlayerAnimation {
 		player.elytra.updateRightWing();
 
 		// Wings
-		player.wings.position.y = 8 - 1.85 * state;
-		player.wings.rotation.x = (10.8 * Math.PI) / 180 + 0.3 * state;
-		player.wings.position.z = -2 + 3.79 * state - 3.45 * state;
+		player.wings.position.y = 6 - state;
+		player.wings.position.z = -2;
+		player.wings.rotation.x = 0.2617994 - player.skin.body.offsetRotation.x;
 
 		this._crouchWasActive = this._crouchActive;
 	}
