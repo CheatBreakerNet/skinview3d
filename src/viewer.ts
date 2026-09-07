@@ -189,11 +189,11 @@ export interface SkinViewerOptions {
 	 * @defaultValue If unspecified, the ears will be invisible.
 	 */
 	ears?:
-		| "current-skin"
-		| {
-				textureType: "standalone" | "skin";
-				source: RemoteImage | TextureSource;
-		  };
+	| "current-skin"
+	| {
+		textureType: "standalone" | "skin";
+		source: RemoteImage | TextureSource;
+	};
 
 	/**
 	 * Whether to preserve the buffers until manually cleared or overwritten.
@@ -791,6 +791,8 @@ export class SkinViewer {
 		}
 
 		this.wingsTexture = new CanvasTexture(this.wingsCanvas);
+		this.wingsTexture.magFilter = NearestFilter;
+		this.wingsTexture.minFilter = NearestFilter;
 		this.playerObject.wings.map = this.wingsTexture;
 	}
 
