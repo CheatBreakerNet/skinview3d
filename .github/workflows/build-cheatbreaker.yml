@@ -1,0 +1,47 @@
+name: Build cheatbreaker libs
+
+on:
+  push:
+    branches:
+      - cheatbreaker
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          ref: cheatbreaker
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build modules
+        run: pnpm build:modules
+
+      - name: Commit built libs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add libs
+          if git diff --cached --exit-code; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore: rebuild libs [skip ci]"
+            git push
+          fi
