@@ -581,7 +581,7 @@ export class WingsObject extends Bone {
 		this.material = new MeshStandardMaterial({
 			side: DoubleSide,
 			transparent: true,
-			alphaTest: 1e-5,
+			alphaTest: 0.1
 		});
 
 		this.leftWing = this.createWing();
