@@ -9,13 +9,14 @@ import {
 	Mesh,
 	MeshStandardMaterial,
 	Object3D,
+	PlaneGeometry,
 	Quaternion,
 	Texture,
 	Vector2,
 	Vector3,
 } from "three";
 
-function setUVs(
+function setBoxUVs(
 	box: BoxGeometry,
 	u: number,
 	v: number,
@@ -61,12 +62,36 @@ function setUVs(
 	uvAttr.needsUpdate = true;
 }
 
+function setPlaneUVs(
+	plane: PlaneGeometry,
+	u: number,
+	v: number,
+	width: number,
+	height: number,
+	textureWidth: number,
+	textureHeight: number
+): void {
+	const uv = plane.attributes.uv as BufferAttribute;
+
+	const u0 = u / textureWidth;
+	const u1 = (u + width) / textureWidth;
+	const v0 = 1 - (v + height) / textureHeight;
+	const v1 = 1 - v / textureHeight;
+
+	uv.setXY(0, u0, v0);
+	uv.setXY(1, u1, v0);
+	uv.setXY(2, u0, v1);
+	uv.setXY(3, u1, v1);
+
+	uv.needsUpdate = true;
+}
+
 function setSkinUVs(box: BoxGeometry, u: number, v: number, width: number, height: number, depth: number): void {
-	setUVs(box, u, v, width, height, depth, 64, 64);
+	setBoxUVs(box, u, v, width, height, depth, 64, 64);
 }
 
 function setCapeUVs(box: BoxGeometry, u: number, v: number, width: number, height: number, depth: number): void {
-	setUVs(box, u, v, width, height, depth, 64, 32);
+	setBoxUVs(box, u, v, width, height, depth, 64, 32);
 }
 
 /**
@@ -581,7 +606,7 @@ export class WingsObject extends Bone {
 		this.material = new MeshStandardMaterial({
 			side: DoubleSide,
 			transparent: true,
-			alphaTest: 0.1
+			alphaTest: 0.1,
 		});
 
 		this.leftWing = this.createWing();
@@ -602,14 +627,15 @@ export class WingsObject extends Bone {
 		wingGroup.rotation.order = "ZYX";
 
 		const wingBoneBox = new BoxGeometry(56, 8, 8);
-		setUVs(wingBoneBox, 112, 88, 56, 8, 8, 256, 256);
+		setBoxUVs(wingBoneBox, 112, 88, 56, 8, 8, 256, 256);
 		const wingBone = new Mesh(wingBoneBox, this.material);
 		wingBone.position.set(-28, 0, 0);
 
-		const wingSkinBox = new BoxGeometry(56, 0, 56);
-		setUVs(wingSkinBox, -56, 88, 56, 0, 56, 256, 256);
-		const wingSkin = new Mesh(wingSkinBox, this.material);
+		const wingSkinPlane = new PlaneGeometry(56, 56);
+		setPlaneUVs(wingSkinPlane, 56, 88, 56, 56, 256, 256);
+		const wingSkin = new Mesh(wingSkinPlane, this.material);
 		wingSkin.position.set(-28, 0, -30);
+		wingSkin.rotation.set(Math.PI / 2, 0, 0);
 
 		wingGroup.add(wingBone, wingSkin);
 
@@ -619,14 +645,15 @@ export class WingsObject extends Bone {
 		wingTipGroup.position.set(-56, 0, 0);
 
 		const wingtipBoneBox = new BoxGeometry(56, 4, 4);
-		setUVs(wingtipBoneBox, 112, 136, 56, 4, 4, 256, 256);
+		setBoxUVs(wingtipBoneBox, 112, 136, 56, 4, 4, 256, 256);
 		const wingtipBone = new Mesh(wingtipBoneBox, this.material);
 		wingtipBone.position.set(-28, 0, 0);
 
-		const wingtipSkinBox = new BoxGeometry(56, 0, 56);
-		setUVs(wingtipSkinBox, -56, 144, 56, 0, 56, 256, 256);
-		const wingtipSkin = new Mesh(wingtipSkinBox, this.material);
+		const wingtipSkinPlane = new PlaneGeometry(56, 56);
+		setPlaneUVs(wingtipSkinPlane, 56, 144, 56, 56, 256, 256);
+		const wingtipSkin = new Mesh(wingtipSkinPlane, this.material);
 		wingtipSkin.position.set(-28, 0, -30);
+		wingtipSkin.rotation.set(Math.PI / 2, 0, 0);
 
 		wingTipGroup.add(wingtipBone, wingtipSkin);
 		wingGroup.add(wingTipGroup);
@@ -680,7 +707,7 @@ export class EarsObject extends Bone {
 			side: FrontSide,
 		});
 		const earBox = new BoxGeometry(8, 8, 4 / 3);
-		setUVs(earBox, 0, 0, 6, 6, 1, 14, 7);
+		setBoxUVs(earBox, 0, 0, 6, 6, 1, 14, 7);
 
 		this.rightEar = new Mesh(earBox, this.material);
 		this.rightEar.name = "rightEar";
