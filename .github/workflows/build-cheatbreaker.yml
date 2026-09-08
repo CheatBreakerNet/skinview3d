@@ -19,17 +19,12 @@ jobs:
         with:
           ref: cheatbreaker
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Install Node.js
-        uses: actions/setup-node@v4
+      - name: Install pnpm + Node.js
+        uses: pnpm/setup@v2.1.0
         with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+          runtime: node@22
+          cache: true
+          require-lockfile: true
 
       - name: Build modules
         run: pnpm build:modules

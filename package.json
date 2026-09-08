@@ -55,5 +55,6 @@
 		"typedoc": "^0.28.20",
 		"typescript": "^6.0.3",
 		"vite": "^8.2.1"
-	}
+	},
+	"packageManager": "pnpm@12.3.4"
 }
