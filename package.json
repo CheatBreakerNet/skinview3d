@@ -35,7 +35,6 @@
 	],
 	"dependencies": {
 		"@types/three": "^0.185.4",
-		"molang": "^2.0.1",
 		"skinview-utils": "^0.7.1",
 		"three": "^0.185.1"
 	},
