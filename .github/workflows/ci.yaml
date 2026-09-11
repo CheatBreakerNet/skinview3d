@@ -12,34 +12,39 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Cache npm dependencies
-      uses: actions/cache@v4
-      with:
-        path: ~/.npm
-        key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-        restore-keys: |
-          ${{ runner.os }}-node-
-    - name: Install
-      run: npm ci
-    - name: Lint
-      run: "npm run test:lint"
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm + Node.js
+        uses: pnpm/setup@v2.1.0
+        with:
+          runtime: node@22
+          cache: true
+          require-lockfile: true
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run test:lint
 
   test:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Cache npm dependencies
-      uses: actions/cache@v4
-      with:
-        path: ~/.npm
-        key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-        restore-keys: |
-          ${{ runner.os }}-node-
-    - name: Install
-      run: npm ci
-    - name: Build
-      run: npm run build
-    - name: Test
-      run: npm test
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm + Node.js
+        uses: pnpm/setup@v2.1.0
+        with:
+          runtime: node@22
+          cache: true
+          require-lockfile: true
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Test
+        run: pnpm test
