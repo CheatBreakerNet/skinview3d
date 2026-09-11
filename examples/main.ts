@@ -1,6 +1,6 @@
 import * as skinview3d from "../src/skinview3d";
 import type { ModelType } from "skinview-utils";
-import type { BackEquipment } from "../src/model";
+import type { Cosmetic, SkinViewerFocus } from "../src/skinview3d";
 
 import "./style.css";
 
@@ -14,8 +14,6 @@ const availableAnimations = {
 	fly: new skinview3d.FlyAnimation(),
 	swim: new skinview3d.SwimAnimation(),
 	sit: new skinview3d.SitAnimation(),
-	wardrobe_idle: new skinview3d.WardrobeIdleAnimation(),
-	wardrobe_idle2: new skinview3d.WardrobeIdle2Animation(),
 };
 
 let skinViewer: skinview3d.SkinViewer;
@@ -69,6 +67,19 @@ function reloadSkin(): void {
 	}
 }
 
+function syncCosmetics(): void {
+	const capeEnabled = (document.getElementById("cosmetic_cape") as HTMLInputElement)?.checked ?? false;
+	const dragonWingsEnabled = (document.getElementById("cosmetic_dragon_wings") as HTMLInputElement)?.checked ?? false;
+	const capeStyle = (document.getElementById("cape_style") as HTMLSelectElement)?.value;
+
+	skinViewer.playerObject.capeElytra = capeStyle === "elytra";
+
+	const cosmetics: Cosmetic[] = [];
+	if (capeEnabled) cosmetics.push("cape");
+	if (dragonWingsEnabled) cosmetics.push("dragonWings");
+	skinViewer.playerObject.cosmetics = cosmetics;
+}
+
 function reloadCape(): void {
 	const input = document.getElementById("cape_url") as HTMLInputElement;
 	const url = obtainTextureUrl("cape_url");
@@ -76,12 +87,12 @@ function reloadCape(): void {
 		skinViewer.loadCape(null);
 		input?.setCustomValidity("");
 	} else {
-		const selectedBackEquipment = document.querySelector(
-			'input[type="radio"][name="back_equipment"]:checked'
-		) as HTMLInputElement;
 		skinViewer
-			.loadCape(url, { backEquipment: selectedBackEquipment?.value as BackEquipment })
-			.then(() => input?.setCustomValidity(""))
+			.loadCape(url, { makeVisible: false })
+			.then(() => {
+				input?.setCustomValidity("");
+				syncCosmetics();
+			})
 			.catch(e => {
 				input?.setCustomValidity("Image can't be loaded.");
 				console.error(e);
@@ -89,19 +100,45 @@ function reloadCape(): void {
 	}
 }
 
-function reloadWings(): void {
-	const input = document.getElementById("wings_url") as HTMLInputElement;
-	const url = obtainTextureUrl("wings_url");
+function reloadDragonWings(): void {
+	const input = document.getElementById("dragon_wings_url") as HTMLInputElement;
+	const url = obtainTextureUrl("dragon_wings_url");
 	if (url === "") {
-		skinViewer.loadWings(null);
+		skinViewer.loadDragonWings(null);
 		input?.setCustomValidity("");
 	} else {
-		const selectedBackEquipment = document.querySelector(
-			'input[type="radio"][name="back_equipment"]:checked'
-		) as HTMLInputElement;
 		skinViewer
-			.loadWings(url, { backEquipment: selectedBackEquipment?.value as BackEquipment })
-			.then(() => input?.setCustomValidity(""))
+			.loadDragonWings(url, { makeVisible: false })
+			.then(() => {
+				input?.setCustomValidity("");
+				syncCosmetics();
+			})
+			.catch(e => {
+				input?.setCustomValidity("Image can't be loaded.");
+				console.error(e);
+			});
+	}
+}
+
+function reloadShadow(): void {
+	const input = document.getElementById("shadow_url") as HTMLInputElement;
+	const url = obtainTextureUrl("shadow_url");
+	const shadowEnabledCheckbox = document.getElementById("shadow_enabled") as HTMLInputElement;
+
+	if (url === "") {
+		if (shadowEnabledCheckbox?.checked) {
+			skinViewer.enableShadow();
+		} else {
+			skinViewer.disableShadow();
+		}
+		input?.setCustomValidity("");
+	} else {
+		skinViewer
+			.loadShadow(url)
+			.then(() => {
+				input?.setCustomValidity("");
+				if (shadowEnabledCheckbox) shadowEnabledCheckbox.checked = true;
+			})
 			.catch(e => {
 				input?.setCustomValidity("Image can't be loaded.");
 				console.error(e);
@@ -412,25 +449,28 @@ function initializeControls(): void {
 
 	initializeUploadButton("skin_url", reloadSkin);
 	initializeUploadButton("cape_url", reloadCape);
-	initializeUploadButton("wings_url", reloadWings);
+	initializeUploadButton("dragon_wings_url", reloadDragonWings);
 	initializeUploadButton("ears_url", reloadEars);
 	initializeUploadButton("panorama_url", reloadPanorama);
+	initializeUploadButton("shadow_url", reloadShadow);
 
 	const skinUrl = document.getElementById("skin_url") as HTMLInputElement;
 	const skinModel = document.getElementById("skin_model") as HTMLSelectElement;
 	const capeUrl = document.getElementById("cape_url") as HTMLInputElement;
-	const wingsUrl = document.getElementById("wings_url") as HTMLInputElement;
+	const dragonWingsUrl = document.getElementById("dragon_wings_url") as HTMLInputElement;
 	const earsSource = document.getElementById("ears_source") as HTMLSelectElement;
 	const earsUrl = document.getElementById("ears_url") as HTMLInputElement;
 	const panoramaUrl = document.getElementById("panorama_url") as HTMLInputElement;
+	const shadowUrl = document.getElementById("shadow_url") as HTMLInputElement;
 
 	skinUrl?.addEventListener("change", reloadSkin);
 	skinModel?.addEventListener("change", reloadSkin);
 	capeUrl?.addEventListener("change", reloadCape);
-	wingsUrl?.addEventListener("change", reloadWings);
+	dragonWingsUrl?.addEventListener("change", reloadDragonWings);
 	earsSource?.addEventListener("change", () => reloadEars());
 	earsUrl?.addEventListener("change", () => reloadEars());
 	panoramaUrl?.addEventListener("change", reloadPanorama);
+	shadowUrl?.addEventListener("change", reloadShadow);
 
 	const panoramaType = document.getElementById("panorama_type") as HTMLSelectElement;
 	panoramaType?.addEventListener("change", () => {
@@ -443,18 +483,41 @@ function initializeControls(): void {
 
 	updatePanoramaTypeVisibility();
 
-	const backEquipmentRadios = document.querySelectorAll<HTMLInputElement>('input[type="radio"][name="back_equipment"]');
-	for (const el of backEquipmentRadios) {
-		el.addEventListener("change", e => {
-			const target = e.target as HTMLInputElement;
-			if (skinViewer.playerObject.backEquipment === null) {
-				// cape texture hasn't been loaded yet
-				// this option will be processed on texture loading
-			} else {
-				skinViewer.playerObject.backEquipment = target.value as BackEquipment;
-			}
-		});
-	}
+	const cosmeticCape = document.getElementById("cosmetic_cape") as HTMLInputElement;
+	const cosmeticDragonWings = document.getElementById("cosmetic_dragon_wings") as HTMLInputElement;
+	const capeStyle = document.getElementById("cape_style") as HTMLSelectElement;
+
+	cosmeticCape?.addEventListener("change", syncCosmetics);
+	cosmeticDragonWings?.addEventListener("change", syncCosmetics);
+	capeStyle?.addEventListener("change", syncCosmetics);
+
+	const capeSwayEnabled = document.getElementById("cape_sway_enabled") as HTMLInputElement;
+	capeSwayEnabled?.addEventListener("change", e => {
+		const target = e.target as HTMLInputElement;
+		if (target.checked) {
+			skinViewer.enableCapeSway();
+		} else {
+			skinViewer.disableCapeSway();
+		}
+	});
+
+	const shadowEnabled = document.getElementById("shadow_enabled") as HTMLInputElement;
+	shadowEnabled?.addEventListener("change", e => {
+		const target = e.target as HTMLInputElement;
+		if (target.checked) {
+			skinViewer.enableShadow();
+		} else {
+			skinViewer.disableShadow();
+		}
+	});
+
+	const focusApply = document.getElementById("focus_apply");
+	focusApply?.addEventListener("click", () => {
+		const focusTarget = document.getElementById("focus_target") as HTMLSelectElement;
+		const focusZoom = document.getElementById("focus_zoom") as HTMLInputElement;
+		const zoomValue = focusZoom?.value === "" ? undefined : Number(focusZoom.value);
+		skinViewer.focus(focusTarget?.value as SkinViewerFocus, zoomValue);
+	});
 
 	const resetAll = document.getElementById("reset_all");
 
@@ -554,9 +617,24 @@ function initializeViewer(): void {
 
 	reloadSkin();
 	reloadCape();
+	reloadDragonWings();
 	reloadEars(true);
 	reloadPanorama();
 	reloadNameTag();
+	syncCosmetics();
+
+	const capeSwayEnabled = document.getElementById("cape_sway_enabled") as HTMLInputElement;
+	if (capeSwayEnabled?.checked) {
+		skinViewer.enableCapeSway();
+	}
+
+	const shadowEnabledCheckbox = document.getElementById("shadow_enabled") as HTMLInputElement;
+	const shadowUrlValue = (document.getElementById("shadow_url") as HTMLInputElement)?.value;
+	if (shadowUrlValue) {
+		reloadShadow();
+	} else if (shadowEnabledCheckbox?.checked) {
+		skinViewer.enableShadow();
+	}
 
 	syncAllowedActionCheckboxes();
 }

@@ -38,6 +38,7 @@ import {
 	CircleGeometry,
 	MeshBasicMaterial,
 	BackSide,
+	FrontSide,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
@@ -46,7 +47,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { FXAAShader } from "three/examples/jsm/shaders/FXAAShader.js";
 import { PlayerAnimation } from "./animation.js";
-import { type BackEquipment, PlayerObject } from "./model.js";
+import { type Cosmetic, PlayerObject } from "./model.js";
 import { NameTagObject } from "./nametag.js";
 import { clamp, clamp01, lerp } from "./math.js";
 
@@ -84,25 +85,14 @@ export interface SkinLoadOptions extends LoadOptions {
 
 export interface CapeLoadOptions extends LoadOptions {
 	/**
-	 * The equipment (`"cape"` or `"elytra"`) to show when the cape texture is loaded.
+	 * Render the Cape as Elytra instead of a cape.
 	 *
-	 * If `makeVisible` is set to false, this option will have no effect.
-	 *
-	 * @defaultValue `"cape"`
+	 * @defaultValue `false`
 	 */
-	backEquipment?: BackEquipment;
+	elytra?: boolean;
 }
 
-export interface WingsRenderOptions extends LoadOptions {
-	/**
-	 * The equipment (`"wings"`) to show when the wings texture is loaded.
-	 *
-	 * If `makeVisible` is set to false, this option will have no effect.
-	 *
-	 * @defaultValue `"wings"`
-	 */
-	backEquipment?: BackEquipment;
-}
+export interface DragonWingsRenderOptions extends LoadOptions {}
 
 export interface EarsLoadOptions extends LoadOptions {
 	/**
@@ -174,6 +164,9 @@ export interface SkinViewerOptions {
 	 *
 	 * @defaultValue If unspecified, the wings will be invisible.
 	 */
+	dragonWings?: RemoteImage | TextureSource;
+
+	/** @deprecated Use {@link dragonWings}. */
 	wings?: RemoteImage | TextureSource;
 
 	/**
@@ -189,11 +182,11 @@ export interface SkinViewerOptions {
 	 * @defaultValue If unspecified, the ears will be invisible.
 	 */
 	ears?:
-	| "current-skin"
-	| {
-		textureType: "standalone" | "skin";
-		source: RemoteImage | TextureSource;
-	};
+		| "current-skin"
+		| {
+				textureType: "standalone" | "skin";
+				source: RemoteImage | TextureSource;
+		  };
 
 	/**
 	 * Whether to preserve the buffers until manually cleared or overwritten.
@@ -274,6 +267,8 @@ export interface SkinViewerOptions {
 	nameTag?: NameTagObject | string;
 }
 
+export type SkinViewerFocus = "player" | "cape" | "elytra" | "dragonWings" | "wings" | "ears" | Object3D;
+
 /**
  * The SkinViewer renders the player on a canvas.
  */
@@ -334,17 +329,21 @@ export class SkinViewer {
 
 	private onKeyDown: (event: KeyboardEvent) => void;
 	private onKeyUp: (event: KeyboardEvent) => void;
+	private onBlur: () => void;
 
 	private onMouseDown: (event: MouseEvent) => void;
+	private onMouseUp: (event: MouseEvent) => void;
+	private onTouchMove: (event: TouchEvent) => void;
+	private onTouchEnd: (event: TouchEvent) => void;
 
 	/**
 	 * Whether cape swaying (a subtle rotation to the cape as the
 	 * camera orbits around the player) is currently enabled.
-	 * @defaultValue `true`
+	 * @defaultValue `false`
 	 * @see {@link enableCapeSway}
 	 * @see {@link disableCapeSway}
 	 */
-	private _capeSwayEnabled: boolean = true;
+	private _capeSwayEnabled: boolean = false;
 	private capeSway: number = 0;
 	private _capeMaxSway: number = 0.15;
 	private _capeStiffness: number = 8.0;
@@ -352,7 +351,7 @@ export class SkinViewer {
 
 	/**
 	 * Whether a shadow mesh (below the player) is currently enabled.
-	 * @defaultValue `true`
+	 * @defaultValue `false`
 	 * @see {@link enableShadow}
 	 * @see {@link disableShadow}
 	 */
@@ -388,6 +387,9 @@ export class SkinViewer {
 	private _nameTag: NameTagObject | null = null;
 	private nameTagYOffset: number = 20;
 
+	private readonly scratchVector3: Vector3 = new Vector3();
+	private readonly boundDraw: () => void = () => this.draw();
+
 	constructor(options: SkinViewerOptions = {}) {
 		this.canvas = options.canvas === undefined ? document.createElement("canvas") : options.canvas;
 
@@ -410,6 +412,7 @@ export class SkinViewer {
 		this.renderer = new WebGLRenderer({
 			canvas: this.canvas,
 			preserveDrawingBuffer: options.preserveDrawingBuffer === true, // default: false
+			// antialias: false,
 		});
 
 		this.onDevicePixelRatioChange = () => {
@@ -453,6 +456,9 @@ export class SkinViewer {
 		this.playerObject.name = "player";
 		this.playerObject.skin.visible = false;
 		this.playerObject.cape.visible = false;
+		this.playerObject.elytra.visible = false;
+		this.playerObject.dragonWings.visible = false;
+		this.playerObject.ears.visible = false;
 		this.playerWrapper = new Group();
 		this.playerWrapper.add(this.playerObject);
 		this.scene.add(this.playerWrapper);
@@ -479,8 +485,9 @@ export class SkinViewer {
 			this.loadCape(options.cape);
 		}
 
-		if (options.wings !== undefined) {
-			this.loadWings(options.wings);
+		const dragonWingsSource = options.dragonWings ?? options.wings;
+		if (dragonWingsSource !== undefined) {
+			this.loadDragonWings(dragonWingsSource);
 		}
 
 		if (options.ears !== undefined && options.ears !== "current-skin") {
@@ -520,7 +527,7 @@ export class SkinViewer {
 			this._renderPaused = true;
 			this.animationID = null;
 		} else {
-			this.animationID = window.requestAnimationFrame(() => this.draw());
+			this.animationID = window.requestAnimationFrame(this.boundDraw);
 		}
 
 		this.onContextLost = (event: Event) => {
@@ -534,55 +541,21 @@ export class SkinViewer {
 		this.onContextRestored = () => {
 			this.renderer.setClearColor(0, 0); // Clear color might be lost
 			if (!this._renderPaused && !this._disposed && this.animationID === null) {
-				this.animationID = window.requestAnimationFrame(() => this.draw());
+				this.animationID = window.requestAnimationFrame(this.boundDraw);
 			}
 		};
 
 		this.canvas.addEventListener("webglcontextlost", this.onContextLost, false);
 		this.canvas.addEventListener("webglcontextrestored", this.onContextRestored, false);
-		this.canvas.addEventListener(
-			"mousedown",
-			() => {
-				this.isUserRotating = true;
-			},
-			false
-		);
 
-		this.canvas.addEventListener(
-			"mouseup",
-			() => {
-				this.isUserRotating = false;
-			},
-			false
-		);
-
-		this.canvas.addEventListener(
-			"touchmove",
-			e => {
-				if (e.touches.length === 1) {
-					this.isUserRotating = true;
-				} else {
-					this.isUserRotating = false;
-				}
-			},
-			false
-		);
-
-		this.canvas.addEventListener(
-			"touchend",
-			() => {
-				this.isUserRotating = false;
-			},
-			false
-		);
+		if (!this.canvas.hasAttribute("tabindex")) {
+			this.canvas.tabIndex = 0;
+		}
 
 		this.onKeyDown = (event: KeyboardEvent) => {
-			// if (event.code === "ShiftLeft" || event.code === "Space") {
-			// 	console.log(`[SkinViewer] Key pressed: ${event.code}`);
-			// }
-
-			if (event.code === "Space" && this.animation) {
-				this.animation.playJump();
+			if (event.code === "Space") {
+				event.preventDefault();
+				this.animation?.playJump();
 			}
 
 			if (event.code === "ShiftLeft" && this.animation) {
@@ -596,16 +569,38 @@ export class SkinViewer {
 			}
 		};
 
+		this.onBlur = () => {
+			this.animation?.playCrouch(false);
+		};
+
 		this.onMouseDown = (event: MouseEvent) => {
+			this.isUserRotating = true;
+
 			if (event.button === 0 && this.animation) {
 				this.animation.playSwing();
 			}
 		};
 
-		window.addEventListener("keydown", this.onKeyDown, false);
-		window.addEventListener("keyup", this.onKeyUp, false);
+		this.onMouseUp = () => {
+			this.isUserRotating = false;
+		};
 
-		this.canvas.addEventListener("mousedown", this.onMouseDown, false);
+		this.onTouchMove = event => {
+			this.isUserRotating = event.touches.length === 1;
+		};
+
+		this.onTouchEnd = () => {
+			this.isUserRotating = false;
+		};
+
+		this.canvas.addEventListener("keydown", this.onKeyDown);
+		this.canvas.addEventListener("keyup", this.onKeyUp);
+		this.canvas.addEventListener("blur", this.onBlur);
+
+		this.canvas.addEventListener("mousedown", this.onMouseDown);
+		this.canvas.addEventListener("mouseup", this.onMouseUp);
+		this.canvas.addEventListener("touchmove", this.onTouchMove);
+		this.canvas.addEventListener("touchend", this.onTouchEnd);
 	}
 
 	private updateComposerSize(): void {
@@ -645,6 +640,18 @@ export class SkinViewer {
 		this.earsTexture.magFilter = NearestFilter;
 		this.earsTexture.minFilter = NearestFilter;
 		this.playerObject.ears.map = this.earsTexture;
+	}
+
+	/**
+	 * Shows only the selected cosmetic, hiding all others.
+	 *
+	 * When showing the cape, it can optionally be shown as an Elytra instead of a cape.
+	 */
+	setCosmetic(cosmetic: Cosmetic | null, options: { elytra?: boolean } = {}): void {
+		const showCape = cosmetic === "cape";
+		this.playerObject.cape.visible = showCape && options.elytra !== true;
+		this.playerObject.elytra.visible = showCape && options.elytra === true;
+		this.playerObject.dragonWings.visible = cosmetic === "dragonWings";
 	}
 
 	loadSkin(empty: null): void;
@@ -709,7 +716,8 @@ export class SkinViewer {
 			this.recreateCapeTexture();
 
 			if (options.makeVisible !== false) {
-				this.playerObject.backEquipment = options.backEquipment === undefined ? "cape" : options.backEquipment;
+				this.playerObject.cape.visible = options.elytra !== true;
+				this.playerObject.elytra.visible = options.elytra === true;
 			}
 		} else {
 			return loadImage(source).then(image => this.loadCape(image, options));
@@ -717,7 +725,8 @@ export class SkinViewer {
 	}
 
 	resetCape(): void {
-		this.playerObject.backEquipment = null;
+		this.playerObject.cape.visible = false;
+		this.playerObject.elytra.visible = false;
 		this.playerObject.cape.map = null;
 		this.playerObject.elytra.map = null;
 		if (this.capeTexture !== null) {
@@ -796,15 +805,18 @@ export class SkinViewer {
 		this.playerObject.wings.map = this.wingsTexture;
 	}
 
-	loadWings(empty: null): void;
-	loadWings<S extends TextureSource | RemoteImage>(
+	loadDragonWings(empty: null): void;
+	loadDragonWings<S extends TextureSource | RemoteImage>(
 		source: S,
-		options?: WingsRenderOptions
+		options?: DragonWingsRenderOptions
 	): S extends TextureSource ? void : Promise<void>;
 
-	loadWings(source: TextureSource | RemoteImage | null, options: WingsRenderOptions = {}): void | Promise<void> {
+	loadDragonWings(
+		source: TextureSource | RemoteImage | null,
+		options: DragonWingsRenderOptions = {}
+	): void | Promise<void> {
 		if (source === null) {
-			this.resetWings();
+			this.resetDragonWings();
 		} else if (isTextureSource(source)) {
 			const ctx = this.wingsCanvas.getContext("2d");
 			if (ctx) {
@@ -817,21 +829,36 @@ export class SkinViewer {
 			this.recreateWingsTexture();
 
 			if (options.makeVisible !== false) {
-				this.playerObject.backEquipment = options.backEquipment === undefined ? "wings" : options.backEquipment;
+				this.playerObject.dragonWings.visible = true;
 			}
 		} else {
-			return loadImage(source).then(image => this.loadWings(image, options));
+			return loadImage(source).then(image => this.loadDragonWings(image, options));
 		}
 	}
 
-	resetWings(): void {
-		this.playerObject.backEquipment = null;
-		this.playerObject.wings.map = null;
+	resetDragonWings(): void {
+		this.playerObject.dragonWings.visible = false;
+		this.playerObject.dragonWings.map = null;
 
 		if (this.wingsTexture !== null) {
 			this.wingsTexture.dispose();
 			this.wingsTexture = null;
 		}
+	}
+
+	/** @deprecated Use {@link loadDragonWings}. */
+	loadWings<S extends TextureSource | RemoteImage>(
+		source: S,
+		options?: DragonWingsRenderOptions
+	): S extends TextureSource ? void : Promise<void>;
+	loadWings(source: TextureSource | RemoteImage | null, options: DragonWingsRenderOptions = {}): void | Promise<void> {
+		// @ts-expect-error
+		return this.loadDragonWings(source, options);
+	}
+
+	/** @deprecated Use {@link resetDragonWings}. */
+	resetWings(): void {
+		this.resetDragonWings();
 	}
 
 	loadEars(empty: null): void;
@@ -973,21 +1000,20 @@ export class SkinViewer {
 		}
 	}
 
-	// TODO
 	private loadShadowMesh(): Mesh {
 		if (!this.shadowMesh) {
-			const geometry = new CircleGeometry(8, 16);
+			const geometry = new CircleGeometry(6, 16);
 
 			const material = new MeshBasicMaterial({
 				color: 0x000000,
 				transparent: true,
-				opacity: 0.2,
+				opacity: 0.35,
 				depthWrite: false,
-				side: BackSide, // won't be visible if the camera is below the player.
+				side: FrontSide,
 			});
 
 			this.shadowMesh = new Mesh(geometry, material);
-			this.shadowMesh.rotation.x = Math.PI / 2;
+			this.shadowMesh.rotation.x = -Math.PI / 2;
 			this.shadowMesh.position.y = -16;
 		}
 
@@ -1044,11 +1070,13 @@ export class SkinViewer {
 	 * ```
 	 */
 	disableShadow(): void {
-		if (!this.shadowMesh) return;
-
-		this.scene.remove(this.shadowMesh);
+		if (!this._shadowEnabled) return;
 
 		this._shadowEnabled = false;
+
+		if (this.shadowMesh) {
+			this.scene.remove(this.shadowMesh);
+		}
 	}
 
 	loadShadow(empty: null): void;
@@ -1067,12 +1095,23 @@ export class SkinViewer {
 			}
 
 			this.recreateShadowTexture();
+
+			if (!this._shadowEnabled) {
+				this._shadowEnabled = true;
+				this.scene.add(this.loadShadowMesh());
+			}
 		} else {
 			return loadImage(source).then(image => this.loadShadow(image));
 		}
 	}
 
 	resetShadow(): void {
+		if (this.shadowMesh) {
+			this.scene.remove(this.shadowMesh);
+		}
+
+		this._shadowEnabled = false;
+
 		if (this.shadowTexture !== null) {
 			this.shadowTexture.dispose();
 			this.shadowTexture = null;
@@ -1094,7 +1133,7 @@ export class SkinViewer {
 			this._animation.update(this.playerObject, dt);
 			if (this._nameTag) {
 				this._nameTag.position.y =
-					this.playerObject.skin.head.getWorldPosition(new Vector3()).y + this.nameTagYOffset - 8;
+					this.playerObject.skin.head.getWorldPosition(this.scratchVector3).y + this.nameTagYOffset - 8;
 			}
 		}
 
@@ -1109,7 +1148,44 @@ export class SkinViewer {
 
 		this.render();
 
-		this.animationID = window.requestAnimationFrame(() => this.draw());
+		this.animationID = window.requestAnimationFrame(this.boundDraw);
+	}
+
+	/**
+	 * Focuses the camera on a part of the player.
+	 */
+	focus(target: SkinViewerFocus, zoom?: number): void {
+		let object: Object3D;
+
+		if (target === "player") {
+			object = this.playerObject;
+		} else if (target === "cape") {
+			object = this.playerObject.cape;
+		} else if (target === "elytra") {
+			object = this.playerObject.elytra;
+		} else if (target === "dragonWings" || target === "wings") {
+			object = this.playerObject.dragonWings;
+		} else if (target === "ears") {
+			object = this.playerObject.ears;
+		} else {
+			object = target;
+		}
+
+		const position = object.getWorldPosition(this.scratchVector3);
+
+		if (target === "cape" || target === "elytra") {
+			position.y = position.y - 7;
+		} else if (target === "dragonWings" || target === "wings") {
+			position.z = position.z - 4;
+		}
+
+		this.controls.target.copy(position);
+
+		if (zoom !== undefined) {
+			this.zoom = zoom;
+		}
+
+		this.controls.update();
 	}
 
 	/**
@@ -1133,11 +1209,22 @@ export class SkinViewer {
 		}
 		this._disposed = true;
 
+		if (this.animationID !== null) {
+			window.cancelAnimationFrame(this.animationID);
+			this.animationID = null;
+		}
+
 		this.canvas.removeEventListener("webglcontextlost", this.onContextLost, false);
 		this.canvas.removeEventListener("webglcontextrestored", this.onContextRestored, false);
 
-		window.removeEventListener("keydown", this.onKeyDown, false);
-		window.removeEventListener("keyup", this.onKeyUp, false);
+		this.canvas.removeEventListener("mousedown", this.onMouseDown);
+		this.canvas.removeEventListener("mouseup", this.onMouseUp);
+		this.canvas.removeEventListener("touchmove", this.onTouchMove);
+		this.canvas.removeEventListener("touchend", this.onTouchEnd);
+
+		this.canvas.removeEventListener("keydown", this.onKeyDown);
+		this.canvas.removeEventListener("keyup", this.onKeyUp);
+		this.canvas.removeEventListener("blur", this.onBlur);
 
 		if (this.devicePixelRatioQuery !== null) {
 			this.devicePixelRatioQuery.removeEventListener("change", this.onDevicePixelRatioChange);
@@ -1150,16 +1237,19 @@ export class SkinViewer {
 		}
 
 		this.controls.dispose();
-		this.renderer.dispose();
 
 		this.resetSkin();
 		this.resetCape();
 		this.resetEars();
+		this.resetDragonWings();
 		this.resetShadow();
 
 		this.background = null;
 
+		this.composer.dispose();
 		(this.fxaaPass.fsQuad as FullScreenQuad | undefined)?.dispose();
+
+		this.renderer.dispose();
 	}
 
 	get disposed(): boolean {
@@ -1188,7 +1278,7 @@ export class SkinViewer {
 			!this.renderer.getContext().isContextLost() &&
 			this.animationID == null
 		) {
-			this.animationID = window.requestAnimationFrame(() => this.draw());
+			this.animationID = window.requestAnimationFrame(this.boundDraw);
 		}
 	}
 
@@ -1297,20 +1387,26 @@ export class SkinViewer {
 	}
 
 	set animation(animation: PlayerAnimation | null) {
-		if (this._animation !== animation) {
-			this.playerObject.resetJoints();
-			this.playerObject.position.set(0, 0, 0);
-			this.playerObject.rotation.set(0, 0, 0);
-
-			if (this._nameTag) {
-				this._nameTag.position.y = this.nameTagYOffset;
-			}
-
-			this.clock.reset();
+		if (this._animation === animation) {
+			return;
 		}
+
+		this._animation?.reset();
+
+		this.playerObject.resetJoints();
+		this.playerObject.position.set(0, 0, 0);
+		this.playerObject.rotation.set(0, 0, 0);
+
+		if (this._nameTag) {
+			this._nameTag.position.y = this.nameTagYOffset;
+		}
+
+		this.clock.reset();
+
 		if (animation !== null) {
-			animation.progress = 0;
+			animation.reset();
 		}
+
 		this._animation = animation;
 	}
 

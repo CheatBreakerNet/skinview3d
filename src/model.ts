@@ -594,7 +594,7 @@ export class ElytraObject extends Bone {
 	}
 }
 
-export class WingsObject extends Bone {
+export class DragonWingsObject extends Bone {
 	readonly leftWing: Group;
 	readonly rightWing: Group;
 
@@ -730,13 +730,17 @@ export class EarsObject extends Bone {
 	}
 }
 
+export type Cosmetic = "cape" | "dragonWings";
+/** @deprecated Use {@link Cosmetic} */
 export type BackEquipment = "cape" | "elytra" | "wings";
 
 export class PlayerObject extends Group {
 	readonly skin: SkinObject;
 	readonly cape: CapeObject;
 	readonly elytra: ElytraObject;
-	readonly wings: WingsObject;
+	readonly dragonWings: DragonWingsObject;
+	/** @deprecated Use {@link dragonWings} */
+	readonly wings: DragonWingsObject;
 	readonly ears: EarsObject;
 
 	constructor() {
@@ -761,14 +765,15 @@ export class PlayerObject extends Group {
 		this.elytra.visible = false;
 		this.skin.body.add(this.elytra);
 
-		this.wings = new WingsObject();
-		this.wings.name = "wings";
-		this.wings.position.y = 6.5;
-		this.wings.position.z = -2;
-		this.wings.scale.set(0.12, 0.12, 0.12);
-		this.wings.rotation.x = 0.2617994;
-		this.wings.visible = false;
-		this.skin.body.add(this.wings);
+		this.dragonWings = new DragonWingsObject();
+		this.dragonWings.name = "dragonWings";
+		this.wings = this.dragonWings;
+		this.dragonWings.position.y = 6.5;
+		this.dragonWings.position.z = -2;
+		this.dragonWings.scale.set(0.12, 0.12, 0.12);
+		this.dragonWings.rotation.x = 0.2617994;
+		this.dragonWings.visible = false;
+		this.skin.body.add(this.dragonWings);
 
 		this.ears = new EarsObject();
 		this.ears.name = "ears";
@@ -778,6 +783,36 @@ export class PlayerObject extends Group {
 		this.skin.head.add(this.ears);
 	}
 
+	get cosmetics(): Cosmetic[] {
+		const cosmetics: Cosmetic[] = [];
+
+		if (this.cape.visible || this.elytra.visible) cosmetics.push("cape");
+		if (this.dragonWings.visible) cosmetics.push("dragonWings");
+
+		return cosmetics;
+	}
+
+	set cosmetics(values: readonly Cosmetic[]) {
+		const set = new Set(values);
+		this.cape.visible = set.has("cape") && !this.capeElytra;
+		this.elytra.visible = set.has("cape") && this.capeElytra;
+		this.dragonWings.visible = set.has("dragonWings");
+	}
+
+	get capeElytra(): boolean {
+		return this.elytra.visible;
+	}
+
+	set capeElytra(value: boolean) {
+		this.elytra.visible = value && this.cape.visible;
+		this.cape.visible = !value;
+	}
+
+	setDragonWingsVisible(value: boolean): void {
+		this.dragonWings.visible = value;
+	}
+
+	/** @deprecated */
 	get backEquipment(): BackEquipment | null {
 		if (this.cape.visible) {
 			return "cape";
@@ -790,6 +825,7 @@ export class PlayerObject extends Group {
 		}
 	}
 
+	/** @deprecated */
 	set backEquipment(value: BackEquipment | null) {
 		this.cape.visible = value === "cape";
 		this.elytra.visible = value === "elytra";
@@ -810,9 +846,9 @@ export class PlayerObject extends Group {
 		this.elytra.rotation.x = 0;
 		this.elytra.resetJoints();
 
-		this.wings.position.y = 6;
-		this.wings.position.z = -2;
-		this.wings.rotation.x = 0.2617994;
-		this.wings.resetJoints();
+		this.dragonWings.position.y = 6;
+		this.dragonWings.position.z = -2;
+		this.dragonWings.rotation.x = 0.2617994;
+		this.dragonWings.resetJoints();
 	}
 }

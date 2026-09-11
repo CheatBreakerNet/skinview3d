@@ -214,12 +214,16 @@ export function easingArc(t: number, height = 1, easing: EasingFn = easeInOutSin
 /**
  * Linearly interpolates between 2 euler rotations
  */
-export function lerpEuler(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }, t: number) {
-	return {
-		x: lerp(a.x, b.x, t),
-		y: lerp(a.y, b.y, t),
-		z: lerp(a.z, b.z, t),
-	};
+export function lerpEuler(
+	a: { x: number; y: number; z: number },
+	b: { x: number; y: number; z: number },
+	t: number,
+	out: { x: number; y: number; z: number } = { x: 0, y: 0, z: 0 }
+): { x: number; y: number; z: number } {
+	out.x = lerp(a.x, b.x, t);
+	out.y = lerp(a.y, b.y, t);
+	out.z = lerp(a.z, b.z, t);
+	return out;
 }
 
 /**
@@ -251,6 +255,13 @@ export type EulerKeyframe = Keyframe<{
  * between them to create a smooth rotation value
  * @param keyframes - Euler rotation keyframes
  */
-export function sampleEulerKeyframes(keyframes: readonly EulerKeyframe[], time: number) {
-	return sampleKeyframes(keyframes, time, lerpEuler);
+export function sampleEulerKeyframes(
+	keyframes: readonly EulerKeyframe[],
+	time: number,
+	out?: { x: number; y: number; z: number }
+): { x: number; y: number; z: number } {
+	const segment = findKeyframeSegment(keyframes, time);
+	const easing = segment.start.easing ?? linear;
+
+	return lerpEuler(segment.start.value, segment.end.value, easing(segment.progress), out);
 }
