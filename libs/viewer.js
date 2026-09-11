@@ -1001,6 +1001,9 @@ export class SkinViewer {
         if (target === "player") {
             object = this.playerObject;
         }
+        else if (target === "head") {
+            object = this.playerObject.skin.head;
+        }
         else if (target === "cape") {
             object = this.playerObject.cape;
         }
@@ -1017,7 +1020,10 @@ export class SkinViewer {
             object = target;
         }
         const position = object.getWorldPosition(this.scratchVector3);
-        if (target === "cape" || target === "elytra") {
+        if (target === "head") {
+            position.y = position.y + 4;
+        }
+        else if (target === "cape" || target === "elytra") {
             position.y = position.y - 7;
         }
         else if (target === "dragonWings" || target === "wings") {

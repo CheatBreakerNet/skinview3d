@@ -197,7 +197,7 @@ export interface SkinViewerOptions {
      */
     nameTag?: NameTagObject | string;
 }
-export type SkinViewerFocus = "player" | "cape" | "elytra" | "dragonWings" | "wings" | "ears" | Object3D;
+export type SkinViewerFocus = "player" | "head" | "cape" | "elytra" | "dragonWings" | "wings" | "ears" | Object3D;
 /**
  * The SkinViewer renders the player on a canvas.
  */
