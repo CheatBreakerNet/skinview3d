@@ -2,7 +2,7 @@ import { Euler, Object3D, Vector3 } from "three";
 import { SIXTEEN } from "../../consts.js";
 import { degToRad } from "../../math.js";
 
-export interface HandAttachmentConfig {
+export interface AttachmentConfig {
 	readonly x?: number;
 	readonly y?: number;
 	readonly z?: number;
@@ -32,14 +32,16 @@ export interface PlayerRigConfig {
 	readonly scaleGui?: number;
 
 	readonly renderHeldItems?: boolean;
-	readonly leftHands: Readonly<Record<string, HandAttachmentConfig>>;
-	readonly rightHands: Readonly<Record<string, HandAttachmentConfig>>;
+	readonly leftHands: Readonly<Record<string, AttachmentConfig>>;
+	readonly rightHands: Readonly<Record<string, AttachmentConfig>>;
 
 	readonly head: string;
+	readonly body?: string;
+	readonly cosmetic?: AttachmentConfig;
 	readonly meshes: Readonly<Record<string, MeshConfig>>;
 }
 
-export function applyHandAttachment(object: Object3D, config: HandAttachmentConfig): void {
+export function applyHandAttachment(object: Object3D, config: AttachmentConfig): void {
 	object.position.set((config.x ?? 0) * SIXTEEN, (config.y ?? 0) * SIXTEEN, (config.z ?? 0) * SIXTEEN);
 
 	object.rotation.copy(new Euler(degToRad(config.rx ?? 0), degToRad(config.ry ?? 0), degToRad(config.rz ?? 0)));
@@ -52,7 +54,7 @@ export type Hand = "left" | "right";
 export function getHandAttachment(
 	config: PlayerRigConfig,
 	hand: Hand
-): { boneName: string; config: HandAttachmentConfig } | null {
+): { boneName: string; config: AttachmentConfig } | null {
 	const hands = hand === "left" ? config.leftHands : config.rightHands;
 	const entries = Object.entries(hands);
 

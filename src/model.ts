@@ -801,6 +801,18 @@ export class PlayerObject extends Group {
 			rig.setBodyTexture(this.skin.map);
 			this.add(rig.object);
 		}
+
+		this._setBOBJCosmetics();
+	}
+
+	private _setBOBJCosmetics(): void {
+		const rig = this._useBOBJModel ? this._BOBJRig : null;
+
+		for (const cosmetic of [this.cape, this.elytra, this.dragonWings]) {
+			if (!rig || !rig.attachCosmetic(cosmetic)) {
+				this.skin.body.add(cosmetic);
+			}
+		}
 	}
 
 	setBOBJRigs(defaultRig: EmoteBOBJRig | null, slimRig: EmoteBOBJRig | null): void {
@@ -848,6 +860,8 @@ export class PlayerObject extends Group {
 		if (this._BOBJRig) {
 			this._BOBJRig.object.visible = value;
 		}
+
+		this._setBOBJCosmetics();
 	}
 
 	get cosmetics(): Cosmetic[] {

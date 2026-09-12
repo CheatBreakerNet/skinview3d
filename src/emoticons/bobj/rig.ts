@@ -1,13 +1,20 @@
-import { DoubleSide, Group, MeshBasicMaterial, Object3D, SkinnedMesh, Texture } from "three";
+import { DoubleSide, Euler, Group, MeshBasicMaterial, Object3D, SkinnedMesh, Texture } from "three";
 
 import type { BOBJAction } from "./index.js";
-import type { PlayerRigConfig } from "./config.js";
+import type { AttachmentConfig, PlayerRigConfig } from "./config.js";
 import { applyHandAttachment, getHandAttachment, type Hand } from "./config.js";
 import type { BOBJMeshFile } from "./mesh.js";
 import { applyActionToArmature, buildArmatureSkeleton, buildSkinnedMesh, type BuiltArmature } from "./skinned.js";
+import { degToRad } from "../../math.js";
 
 export const BOBJ_TO_SKINVIEW_SCALE = 16;
 export const BOBJ_FEET_Y_OFFSET = -16;
+
+const COSMETIC_ATTACHMENT: AttachmentConfig = {
+	ry: 180,
+	rx: -12,
+	z: 0.06,
+};
 
 export class EmoteBOBJRig {
 	readonly object: Group;
@@ -17,6 +24,8 @@ export class EmoteBOBJRig {
 	private readonly meshes = new Map<string, SkinnedMesh>();
 	private readonly bodyMaterial: MeshBasicMaterial;
 	private readonly propMaterials = new Map<string, MeshBasicMaterial>();
+
+	private readonly cosmetics = new Map<string, Group>();
 
 	private _currentAction: BOBJAction | null = null;
 
@@ -126,6 +135,42 @@ export class EmoteBOBJRig {
 
 		applyHandAttachment(object, attachment.config);
 		bone.add(object);
+
+		return true;
+	}
+
+	private getCosmeticAnchor(boneName: string): Group | null {
+		let anchor = this.cosmetics.get(boneName);
+		if (anchor) return anchor;
+
+		const bone = this.getBone(boneName);
+		if (!bone) return null;
+
+		anchor = new Group();
+		anchor.name = `${boneName}CosmeticAnchor`;
+
+		const attachment = this.config.cosmetic ?? COSMETIC_ATTACHMENT;
+
+		anchor.position.set(attachment.x ?? 0, attachment.y ?? 0, attachment.z ?? 0);
+		anchor.rotation.copy(
+			new Euler(degToRad(attachment.rx ?? 0), degToRad(attachment.ry ?? 0), degToRad(attachment.rz ?? 0))
+		);
+
+		const inverseScale = 1 / (BOBJ_TO_SKINVIEW_SCALE * this.config.scale);
+		anchor.scale.setScalar(inverseScale * (attachment.sx ?? 1));
+
+		bone.add(anchor);
+
+		this.cosmetics.set(boneName, anchor);
+
+		return anchor;
+	}
+
+	attachCosmetic(object: Object3D, boneName: string = this.config.body ?? "low_body"): boolean {
+		const anchor = this.getCosmeticAnchor(boneName);
+		if (!anchor) return false;
+
+		anchor.add(object);
 
 		return true;
 	}
