@@ -1,5 +1,5 @@
 import { Vector3 } from "three";
-import { PlayerAnimation, type AnimationActions } from "../animation.js";
+import { IdleAnimation, PlayerAnimation, type AnimationActions } from "../animation.js";
 import type { PlayerObject } from "../model.js";
 
 import { type BOBJAction, type BOBJData, sampleBone } from "./bobj/index.js";
@@ -204,9 +204,10 @@ export class EmoteAnimation extends PlayerAnimation {
 		return DISABLED_ACTIONS;
 	}
 
-	// override interruptForAction(): PlayerAnimation | null {
-	// 	return new IdleAnimation();
-	// }
+	override interruptForAction(): PlayerAnimation | null {
+		this.playEmote(null);
+		return new IdleAnimation();
+	}
 
 	get emote(): EmoteDefinition | null {
 		return this._emote;

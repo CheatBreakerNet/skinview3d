@@ -832,7 +832,18 @@ export class PlayerObject extends Group {
 
 	set useBOBJModel(value: boolean) {
 		this._useBOBJModel = value;
-		this.skin.visible = !value;
+
+		for (const part of [
+			this.skin.head,
+			this.skin.body,
+			this.skin.rightArm,
+			this.skin.leftArm,
+			this.skin.rightLeg,
+			this.skin.leftLeg,
+		]) {
+			part.innerLayer.visible = !value;
+			part.outerLayer.visible = !value;
+		}
 
 		if (this._BOBJRig) {
 			this._BOBJRig.object.visible = value;

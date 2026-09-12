@@ -614,6 +614,16 @@ export class SkinViewer {
 		fn(next);
 	}
 
+	private interruptEmote(): void {
+		const current = this.animation;
+		if (!current) return;
+
+		const next = current.interruptForAction();
+		if (next) {
+			this.animation = next;
+		}
+	}
+
 	private updateComposerSize(): void {
 		this.composer.setSize(this.width, this.height);
 		const pixelRatio = this.renderer.getPixelRatio();
@@ -673,6 +683,8 @@ export class SkinViewer {
 	): S extends TextureSource ? void : Promise<void>;
 
 	loadSkin(source: TextureSource | RemoteImage | null, options: SkinLoadOptions = {}): void | Promise<void> {
+		this.interruptEmote();
+
 		if (source === null) {
 			this.resetSkin();
 		} else if (isTextureSource(source)) {
@@ -708,6 +720,8 @@ export class SkinViewer {
 	}
 
 	resetSkin(): void {
+		this.interruptEmote();
+
 		this.playerObject.skin.visible = false;
 		this.playerObject.skin.map = null;
 		this.playerObject.bobjRig?.setBodyTexture(null);
@@ -724,6 +738,8 @@ export class SkinViewer {
 	): S extends TextureSource ? void : Promise<void>;
 
 	loadCape(source: TextureSource | RemoteImage | null, options: CapeLoadOptions = {}): void | Promise<void> {
+		this.interruptEmote();
+
 		if (source === null) {
 			this.resetCape();
 		} else if (isTextureSource(source)) {
@@ -740,6 +756,8 @@ export class SkinViewer {
 	}
 
 	resetCape(): void {
+		this.interruptEmote();
+
 		this.playerObject.cape.visible = false;
 		this.playerObject.elytra.visible = false;
 		this.playerObject.cape.map = null;
@@ -830,6 +848,8 @@ export class SkinViewer {
 		source: TextureSource | RemoteImage | null,
 		options: DragonWingsRenderOptions = {}
 	): void | Promise<void> {
+		this.interruptEmote();
+
 		if (source === null) {
 			this.resetDragonWings();
 		} else if (isTextureSource(source)) {
@@ -852,6 +872,8 @@ export class SkinViewer {
 	}
 
 	resetDragonWings(): void {
+		this.interruptEmote();
+
 		this.playerObject.dragonWings.visible = false;
 		this.playerObject.dragonWings.map = null;
 
