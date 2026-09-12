@@ -15,6 +15,7 @@ import {
 	Vector2,
 	Vector3,
 } from "three";
+import type { EmoteBOBJRig } from "./skinview3d.js";
 
 function setBoxUVs(
 	box: BoxGeometry,
@@ -743,6 +744,11 @@ export class PlayerObject extends Group {
 	readonly wings: DragonWingsObject;
 	readonly ears: EarsObject;
 
+	private _BOBJRig: EmoteBOBJRig | null = null;
+	private _BOBJDefaultRig: EmoteBOBJRig | null = null;
+	private _BOBJSlimRig: EmoteBOBJRig | null = null;
+	private _useBOBJModel = false;
+
 	constructor() {
 		super();
 
@@ -781,6 +787,56 @@ export class PlayerObject extends Group {
 		this.ears.position.z = 2 / 3;
 		this.ears.visible = false;
 		this.skin.head.add(this.ears);
+	}
+
+	setBOBJRig(rig: EmoteBOBJRig | null): void {
+		if (this._BOBJRig) {
+			this.remove(this._BOBJRig.object);
+		}
+
+		this._BOBJRig = rig;
+
+		if (rig) {
+			rig.object.visible = this._useBOBJModel;
+			rig.setBodyTexture(this.skin.map);
+			this.add(rig.object);
+		}
+	}
+
+	setBOBJRigs(defaultRig: EmoteBOBJRig | null, slimRig: EmoteBOBJRig | null): void {
+		this._BOBJDefaultRig = defaultRig;
+		this._BOBJSlimRig = slimRig;
+
+		this.setBOBJRig(this.skin.modelType === "slim" ? slimRig : defaultRig);
+	}
+
+	syncBOBJModelType(): void {
+		if (!this._BOBJDefaultRig && !this._BOBJSlimRig) return;
+
+		const rig = this.skin.modelType === "slim" ? this._BOBJSlimRig : this._BOBJDefaultRig;
+
+		if (rig !== this._BOBJRig) {
+			this.setBOBJRig(rig);
+		} else {
+			rig?.setBodyTexture(this.skin.map);
+		}
+	}
+
+	get bobjRig(): EmoteBOBJRig | null {
+		return this._BOBJRig;
+	}
+
+	get useBOBJModel(): boolean {
+		return this._useBOBJModel;
+	}
+
+	set useBOBJModel(value: boolean) {
+		this._useBOBJModel = value;
+		this.skin.visible = !value;
+
+		if (this._BOBJRig) {
+			this._BOBJRig.object.visible = value;
+		}
 	}
 
 	get cosmetics(): Cosmetic[] {

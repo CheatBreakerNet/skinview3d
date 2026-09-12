@@ -618,6 +618,7 @@ export class SkinViewer {
 		this.skinTexture.magFilter = NearestFilter;
 		this.skinTexture.minFilter = NearestFilter;
 		this.playerObject.skin.map = this.skinTexture;
+		this.playerObject.bobjRig?.setBodyTexture(this.skinTexture);
 	}
 
 	private recreateCapeTexture(): void {
@@ -672,6 +673,8 @@ export class SkinViewer {
 				this.playerObject.skin.modelType = options.model;
 			}
 
+			this.playerObject.syncBOBJModelType();
+
 			if (options.makeVisible !== false) {
 				this.playerObject.skin.visible = true;
 			}
@@ -695,6 +698,7 @@ export class SkinViewer {
 	resetSkin(): void {
 		this.playerObject.skin.visible = false;
 		this.playerObject.skin.map = null;
+		this.playerObject.bobjRig?.setBodyTexture(null);
 		if (this.skinTexture !== null) {
 			this.skinTexture.dispose();
 			this.skinTexture = null;

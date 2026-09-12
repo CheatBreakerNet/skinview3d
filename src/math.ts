@@ -77,6 +77,10 @@ export function sampleKeyframes<T>(
 	return interpolate(segment.start.value, segment.end.value, easing(segment.progress));
 }
 
+export function degToRad(deg: number): number {
+	return (deg * Math.PI) / 180;
+}
+
 /**
  * Function that maps a normalized time to an eased value (0..1)
  */
@@ -120,6 +124,22 @@ export function inverseLerp(a: number, b: number, value: number): number {
  */
 export function remap(value: number, inMin: number, inMax: number, outMin: number, outMax: number): number {
 	return lerp(outMin, outMax, inverseLerp(inMin, inMax, value));
+}
+
+/**
+ * Cubic Bezier evaluation
+ */
+export function bezier(p0: number, p1: number, p2: number, p3: number, t: number): number {
+	const inv = 1 - t;
+
+	return inv * inv * inv * p0 + 3 * inv * inv * t * p1 + 3 * inv * t * t * p2 + t * t * t * p3;
+}
+
+/**
+ * Random float in [-half, half]
+ */
+export function jitter(half: number): number {
+	return Math.random() * half * 2 - half;
 }
 
 // No easing
