@@ -7,7 +7,7 @@ import {
 	FrontSide,
 	Group,
 	Mesh,
-	MeshStandardMaterial,
+	MeshBasicMaterial,
 	Object3D,
 	PlaneGeometry,
 	Quaternion,
@@ -262,18 +262,18 @@ export class SkinObject extends Bone {
 	private slim = false;
 
 	private _map: Texture | null = null;
-	private layer1Material: MeshStandardMaterial;
-	private layer1MaterialBiased: MeshStandardMaterial;
-	private layer2Material: MeshStandardMaterial;
-	private layer2MaterialBiased: MeshStandardMaterial;
+	private layer1Material: MeshBasicMaterial;
+	private layer1MaterialBiased: MeshBasicMaterial;
+	private layer2Material: MeshBasicMaterial;
+	private layer2MaterialBiased: MeshBasicMaterial;
 
 	constructor() {
 		super();
 
-		this.layer1Material = new MeshStandardMaterial({
+		this.layer1Material = new MeshBasicMaterial({
 			side: FrontSide,
 		});
-		this.layer2Material = new MeshStandardMaterial({
+		this.layer2Material = new MeshBasicMaterial({
 			side: DoubleSide,
 			transparent: true,
 			alphaTest: 1e-5,
@@ -495,12 +495,12 @@ export class SkinObject extends Bone {
 export class CapeObject extends Bone {
 	readonly cape: Mesh;
 
-	private material: MeshStandardMaterial;
+	private material: MeshBasicMaterial;
 
 	constructor() {
 		super();
 
-		this.material = new MeshStandardMaterial({
+		this.material = new MeshBasicMaterial({
 			side: DoubleSide,
 			transparent: true,
 			alphaTest: 1e-5,
@@ -530,12 +530,12 @@ export class ElytraObject extends Bone {
 	readonly leftWing: Group;
 	readonly rightWing: Group;
 
-	private material: MeshStandardMaterial;
+	private material: MeshBasicMaterial;
 
 	constructor() {
 		super();
 
-		this.material = new MeshStandardMaterial({
+		this.material = new MeshBasicMaterial({
 			side: DoubleSide,
 			transparent: true,
 			alphaTest: 1e-5,
@@ -599,12 +599,12 @@ export class DragonWingsObject extends Bone {
 	readonly leftWing: Group;
 	readonly rightWing: Group;
 
-	private material: MeshStandardMaterial;
+	private material: MeshBasicMaterial;
 
 	constructor() {
 		super();
 
-		this.material = new MeshStandardMaterial({
+		this.material = new MeshBasicMaterial({
 			side: DoubleSide,
 			transparent: true,
 			alphaTest: 0.1,
@@ -699,12 +699,12 @@ export class EarsObject extends Bone {
 	readonly rightEar: Mesh;
 	readonly leftEar: Mesh;
 
-	private material: MeshStandardMaterial;
+	private material: MeshBasicMaterial;
 
 	constructor() {
 		super();
 
-		this.material = new MeshStandardMaterial({
+		this.material = new MeshBasicMaterial({
 			side: FrontSide,
 		});
 		const earBox = new BoxGeometry(8, 8, 4 / 3);

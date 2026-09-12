@@ -1,4 +1,4 @@
-import { Group, MeshStandardMaterial, Object3D, SkinnedMesh, Texture } from "three";
+import { DoubleSide, Group, MeshBasicMaterial, Object3D, SkinnedMesh, Texture } from "three";
 
 import type { BOBJAction } from "./index.js";
 import type { PlayerRigConfig } from "./config.js";
@@ -15,8 +15,8 @@ export class EmoteBOBJRig {
 
 	private readonly armature: BuiltArmature;
 	private readonly meshes = new Map<string, SkinnedMesh>();
-	private readonly bodyMaterial: MeshStandardMaterial;
-	private readonly propMaterials = new Map<string, MeshStandardMaterial>();
+	private readonly bodyMaterial: MeshBasicMaterial;
+	private readonly propMaterials = new Map<string, MeshBasicMaterial>();
 
 	private _currentAction: BOBJAction | null = null;
 
@@ -39,7 +39,11 @@ export class EmoteBOBJRig {
 
 		const boneNameToIndex = new Map(this.armature.bones.map((bone, index) => [bone.name, index]));
 
-		this.bodyMaterial = new MeshStandardMaterial();
+		this.bodyMaterial = new MeshBasicMaterial({
+			side: DoubleSide,
+			transparent: true,
+			alphaTest: 1e-5,
+		});
 
 		const bodyMesh = buildSkinnedMesh(file, bodyMeshDef, this.armature, boneNameToIndex, this.bodyMaterial, true);
 
@@ -69,7 +73,7 @@ export class EmoteBOBJRig {
 			const meshDef = file.meshes.get(name);
 			if (!meshDef) continue;
 
-			const material = new MeshStandardMaterial();
+			const material = new MeshBasicMaterial();
 			const mesh = buildSkinnedMesh(file, meshDef, this.armature, boneNameToIndex, material, false);
 
 			if (!mesh) continue;

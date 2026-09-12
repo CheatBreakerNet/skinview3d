@@ -49,19 +49,19 @@ export interface BOBJMeshFile {
 }
 
 function eliminateTinyWeights(weights: BOBJWeight[]): BOBJWeight[] {
-	const kept = weights.filter(weight => weight.weight >= 0.05);
+	const kept = weights.filter(weight => weight.weight >= 0.05)
 
-	if (kept.length === 0) return kept;
+	if (kept.length === 0) return []
 
-	let sum = 0;
-	for (const weight of kept) sum += weight.weight;
+	let sum = 0
+	for (const weight of kept) sum += weight.weight
 
-	if (sum < 1) {
-		const last = kept[kept.length - 1];
-		kept[kept.length - 1] = { bone: last.bone, weight: last.weight + (1 - sum) };
-	}
+	if (sum <= 0) return []
 
-	return kept;
+	return kept.map(weight => ({
+		bone: weight.bone,
+		weight: weight.weight / sum,
+	}))
 }
 
 function parseFaceCorner(value: string): BOBJFaceCorner {

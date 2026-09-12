@@ -949,6 +949,7 @@ export class SkinViewer {
 				canvas.width = size;
 				canvas.height = size;
 
+				// eslint-disable-next-line
 				const ctx = canvas.getContext("2d")!;
 
 				ctx.translate(size / 2, size / 2);
