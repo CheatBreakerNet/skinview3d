@@ -179,7 +179,12 @@ function emoticonsTick(now: number): void {
 
 	if (emoteAnimation && activeEmoteKey !== null) {
 		const definition = findEmote(activeEmoteKey);
-		if (definition && !definition.looping && emoteAnimation.duration > 0 && emoteAnimation.progress >= emoteAnimation.duration) {
+		if (
+			definition &&
+			!definition.looping &&
+			emoteAnimation.duration > 0 &&
+			emoteAnimation.progress >= emoteAnimation.duration
+		) {
 			stopEmote(true);
 		}
 	}

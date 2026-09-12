@@ -28,15 +28,6 @@ const BOBJ_BONE_NAME: Record<EmoteBoneName, string> = {
 	leftLeg: "left_leg",
 };
 
-// const BOBJ_LOW_BONE_NAME = {
-// 	rightArm: "low_right_arm",
-// 	leftArm: "low_left_arm",
-// 	rightLeg: "low_leg_right",
-// 	leftLeg: "low_left_leg",
-// } as const;
-
-// type LowBoneName = keyof typeof BOBJ_LOW_BONE_NAME;
-
 const HAND_OFFSET: readonly [number, number, number] = [0, -10, 1];
 const FACE_OFFSET: readonly [number, number, number] = [0, 6, 3];
 
@@ -90,91 +81,66 @@ const NON_LOOPING_EMOTES = new Set([
 	"woah",
 ]);
 
-function popcornTrigger(): EmoteTrigger {
-	const ticks = new Set([8, 32, 56, 86]);
-
-	return {
-		bone: "rightArm",
-		offset: HAND_OFFSET,
-		countAt: tick => (ticks.has(tick) ? 15 : 0),
-		spawn: (system, position, count) => {
-			system.spawnPopcorn(position, count);
-		},
-	};
+function makeTrigger(
+	bone: EmoteBoneName,
+	offset: readonly [number, number, number],
+	countAt: (localTick: number) => number,
+	spawn: (system: ParticleSystem, position: Vector3, count: number) => void
+): EmoteTrigger {
+	return { bone, offset, countAt, spawn };
 }
 
-function pureSaltTrigger(): EmoteTrigger {
-	return {
-		bone: "rightArm",
-		offset: HAND_OFFSET,
-		countAt: tick => {
-			if (tick === 78) return 12;
-			if (tick > 18 && tick <= 78 && tick % 2 === 0) return 1;
-			return 0;
-		},
-		spawn: (system, position, count) => {
-			system.spawnSalt(position, count);
-		},
-	};
-}
-
-function sneezeTrigger(): EmoteTrigger {
-	const burstTick = 119;
-
-	return {
-		bone: "head",
-		offset: FACE_OFFSET,
-		countAt: tick => (tick === burstTick ? 10 : 0),
-		spawn: (system, position, count) => {
-			system.spawnPuff(position, "cloud", count);
-		},
-	};
-}
-
-function cryingTrigger(): EmoteTrigger {
-	return {
-		bone: "head",
-		offset: FACE_OFFSET,
-		countAt: tick => (tick % 2 === 0 ? 1 : 0),
-		spawn: (system, position, count) => {
-			system.spawnPuff(position, "tear", count);
-		},
-	};
-}
-
-function disgustedTrigger(): EmoteTrigger {
-	return {
-		bone: "head",
-		offset: FACE_OFFSET,
-		countAt: tick => (tick >= 78 && tick < 93 ? 3 : 0),
-		spawn: (system, position, count) => {
-			system.spawnPuff(position, "crumb", count);
-		},
-	};
-}
-
-function starPowerTrigger(): EmoteTrigger {
-	return {
-		bone: "rightArm",
-		offset: HAND_OFFSET,
-		countAt: tick => {
-			if (tick === 30) return 15;
-			if (tick >= 33 && tick < 43) return 4;
-			return 0;
-		},
-		spawn: (system, position, count) => {
-			system.spawnPuff(position, "sparkle", count);
-		},
-	};
-}
+const POPCORN_TICKS = new Set([8, 32, 56, 86]);
 
 const SPECIAL_TRIGGERS: Record<string, () => readonly EmoteTrigger[]> = {
-	popcorn: () => [popcornTrigger()],
-	pure_salt: () => [pureSaltTrigger()],
-	sneeze: () => [sneezeTrigger()],
-	crying: () => [cryingTrigger()],
-	disgusted: () => [disgustedTrigger()],
-	star_power: () => [starPowerTrigger()],
+	popcorn: () => [
+		makeTrigger(
+			"rightArm",
+			HAND_OFFSET,
+			tick => (POPCORN_TICKS.has(tick) ? 15 : 0),
+			(system, position, count) => system.spawnPopcorn(position, count)
+		),
+	],
+	pure_salt: () => [
+		makeTrigger(
+			"rightArm",
+			HAND_OFFSET,
+			tick => (tick === 78 ? 12 : tick > 18 && tick <= 78 && tick % 2 === 0 ? 1 : 0),
+			(system, position, count) => system.spawnSalt(position, count)
+		),
+	],
+	sneeze: () => [
+		makeTrigger(
+			"head",
+			FACE_OFFSET,
+			tick => (tick === 119 ? 10 : 0),
+			(system, position, count) => system.spawnPuff(position, "cloud", count)
+		),
+	],
+	crying: () => [
+		makeTrigger(
+			"head",
+			FACE_OFFSET,
+			tick => (tick % 2 === 0 ? 1 : 0),
+			(system, position, count) => system.spawnPuff(position, "tear", count)
+		),
+	],
+	disgusted: () => [
+		makeTrigger(
+			"head",
+			FACE_OFFSET,
+			tick => (tick >= 78 && tick < 93 ? 3 : 0),
+			(system, position, count) => system.spawnPuff(position, "crumb", count)
+		),
+	],
+	star_power: () => [
+		makeTrigger(
+			"rightArm",
+			HAND_OFFSET,
+			tick => (tick === 30 ? 25 : tick >= 33 && tick < 43 ? 6 : 0),
+			(system, position, count) => system.spawnPuff(position, "sparkle", count)
+		),
+	],
 };
 
 const BOBJ_PROPS: Record<string, readonly string[]> = {
@@ -218,7 +184,7 @@ export class EmoteAnimation extends PlayerAnimation {
 	private _BOBJRig: EmoteBOBJRig | null;
 	private _emote: EmoteDefinition | null = null;
 	private _action: BOBJAction | null = null;
-	private _prevTotalTicks = 0;
+	private _prevTotalTicks = -1;
 	private _activeProps: readonly string[] = [];
 	private _lastPlayer: PlayerObject | null = null;
 
@@ -238,6 +204,10 @@ export class EmoteAnimation extends PlayerAnimation {
 		return DISABLED_ACTIONS;
 	}
 
+	// override interruptForAction(): PlayerAnimation | null {
+	// 	return new IdleAnimation();
+	// }
+
 	get emote(): EmoteDefinition | null {
 		return this._emote;
 	}
@@ -256,7 +226,7 @@ export class EmoteAnimation extends PlayerAnimation {
 		this._action = definition ? (this._data.actions.get(definition.action) ?? null) : null;
 
 		this.progress = 0;
-		this._prevTotalTicks = 0;
+		this._prevTotalTicks = -1;
 
 		this._updateBOBJState(definition);
 	}
@@ -320,29 +290,9 @@ export class EmoteAnimation extends PlayerAnimation {
 			const bone = player.skin[boneName];
 
 			bone.originPosition.set(sample.position[0], sample.position[1], sample.position[2]);
-
 			bone.originRotation.set(-sample.rotation[0], -sample.rotation[1], sample.rotation[2]);
-
 			bone.scale.set(sample.scale[0], sample.scale[1], sample.scale[2]);
 		}
-
-		// const lowBones: Record<LowBoneName, typeof player.skin.lowRightArm> = {
-		// 	rightArm: player.skin.lowRightArm,
-		// 	leftArm: player.skin.lowLeftArm,
-		// 	rightLeg: player.skin.lowRightLeg,
-		// 	leftLeg: player.skin.lowLeftLeg,
-		// };
-
-		// for (const boneName of Object.keys(BOBJ_LOW_BONE_NAME) as LowBoneName[]) {
-		// 	const bone = lowBones[boneName];
-		// 	const sample = sampleBone(this._action, BOBJ_LOW_BONE_NAME[boneName], frame);
-
-		// 	bone.setOriginPosition(sample.position[0], sample.position[1], -sample.position[2]);
-
-		// 	bone.originRotation.set(sample.rotation[0], sample.rotation[1], -sample.rotation[2]);
-
-		// 	bone.scale.set(sample.scale[0], sample.scale[1], sample.scale[2]);
-		// }
 
 		this._fireTriggers(player, totalTicks);
 		this._prevTotalTicks = totalTicks;

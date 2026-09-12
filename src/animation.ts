@@ -1,5 +1,5 @@
 import { PlayerObject } from "./model.js";
-import { easeInOutSine, easingArc, clamp01, sampleEulerKeyframes } from "./math.js";
+import { easeInOutSine, easingArc, clamp01, lerp, sampleEulerKeyframes } from "./math.js";
 import { swimLeftArm, swimRightArm } from "./keyframes.js";
 import type { Object3D } from "three";
 
@@ -470,6 +470,13 @@ export abstract class PlayerAnimation {
 			states: this.states,
 			progress: this.progress,
 		};
+	}
+
+	/**
+	 * Interrupts the animation if an action is triggered.
+	 */
+	interruptForAction(): PlayerAnimation | null {
+		return null;
 	}
 
 	/**

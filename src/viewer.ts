@@ -554,11 +554,11 @@ export class SkinViewer {
 		this.onKeyDown = (event: KeyboardEvent) => {
 			if (event.code === "Space") {
 				event.preventDefault();
-				this.animation?.playJump();
+				this.doAction(animation => animation.playJump());
 			}
 
-			if (event.code === "ShiftLeft" && this.animation) {
-				this.animation.playCrouch(true);
+			if (event.code === "ShiftLeft") {
+				this.doAction(animation => animation.playCrouch(true));
 			}
 		};
 
@@ -575,8 +575,8 @@ export class SkinViewer {
 		this.onMouseDown = (event: MouseEvent) => {
 			this.isUserRotating = true;
 
-			if (event.button === 0 && this.animation) {
-				this.animation.playSwing();
+			if (event.button === 0) {
+				this.doAction(animation => animation.playSwing());
 			}
 		};
 
@@ -600,6 +600,18 @@ export class SkinViewer {
 		this.canvas.addEventListener("mouseup", this.onMouseUp);
 		this.canvas.addEventListener("touchmove", this.onTouchMove);
 		this.canvas.addEventListener("touchend", this.onTouchEnd);
+	}
+
+	private doAction(fn: (animation: PlayerAnimation) => void): void {
+		const current = this.animation;
+		if (!current) return;
+
+		const next = current.interruptForAction() ?? current;
+		if (next !== current) {
+			this.animation = next;
+		}
+
+		fn(next);
 	}
 
 	private updateComposerSize(): void {

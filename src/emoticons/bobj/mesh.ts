@@ -49,19 +49,23 @@ export interface BOBJMeshFile {
 }
 
 function eliminateTinyWeights(weights: BOBJWeight[]): BOBJWeight[] {
-	const kept = weights.filter(weight => weight.weight >= 0.05)
+	const kept = weights.filter(weight => weight.weight >= 0.05);
 
-	if (kept.length === 0) return []
+	if (kept.length === 0) return [];
 
-	let sum = 0
-	for (const weight of kept) sum += weight.weight
+	let sum = 0;
+	for (const weight of kept) sum += weight.weight;
 
-	if (sum <= 0) return []
+	if (sum <= 0) return [];
 
 	return kept.map(weight => ({
 		bone: weight.bone,
 		weight: weight.weight / sum,
-	}))
+	}));
+}
+
+function isNumericToken(value: string | undefined): boolean {
+	return value !== undefined && value !== "" && !Number.isNaN(Number(value));
 }
 
 function parseFaceCorner(value: string): BOBJFaceCorner {
@@ -104,7 +108,7 @@ export function parseMesh(data: string): BOBJMeshFile {
 	for (const line of lines) {
 		if (line.length === 0) continue;
 
-		const values = line.split(" ");
+		const values = line.trim().split(/\s+/);
 		const tag = values[0];
 
 		if (tag === "o") {
@@ -154,20 +158,32 @@ export function parseMesh(data: string): BOBJMeshFile {
 			if (!armature) continue;
 
 			const name = values[1];
-			const parentRaw = values[2];
-			const parent = parentRaw.length > 0 ? parentRaw : null;
+			const hasParent = !isNumericToken(values[2]);
 
-			// values[3..5] = tail xyz, values[6..21] = 16 bind-matrix floats.
-			const nums = values.slice(3).filter(value => value.length > 0);
+			const parent = hasParent ? values[2] || null : null;
+			const tailStart = hasParent ? 3 : 2;
 
 			const tail: [number, number, number] = [
-				Number.parseFloat(nums[0]),
-				Number.parseFloat(nums[1]),
-				Number.parseFloat(nums[2]),
+				Number.parseFloat(values[tailStart]),
+				Number.parseFloat(values[tailStart + 1]),
+				Number.parseFloat(values[tailStart + 2]),
 			];
-			const matrix = nums.slice(3, 19).map(value => Number.parseFloat(value));
 
-			const bone: BOBJBoneDef = { index: boneIndex++, name, parent, tail, matrix };
+			const matrix = values.slice(tailStart + 3, tailStart + 19).map(Number.parseFloat);
+
+			if (matrix.length !== 16) {
+				console.warn(`Invalid matrix for bone "${name}"`, values);
+				continue;
+			}
+
+			const bone: BOBJBoneDef = {
+				index: boneIndex++,
+				name,
+				parent,
+				tail,
+				matrix,
+			};
+
 			armature.bones.push(bone);
 			armature.bonesByName.set(name, bone);
 		} else if (tag === "arm_ik") {
