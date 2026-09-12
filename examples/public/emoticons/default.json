@@ -1,7 +1,7 @@
 {
     "name": "Steve",
     "primaryMesh": "body",
-    "scale": 0.9375,
+    "scale": 1,
     "scaleItems": 1,
     "scaleGui": 0.9375,
     "renderHeldItems": false,
