@@ -277,6 +277,8 @@ export class EmoteAnimation extends PlayerAnimation {
 		const totalTicks = this.progress * TICK_RATE;
 		const frame = this._frameAt(totalTicks);
 
+		this.animateWings(player, this.progress * Math.PI);
+
 		if (this._BOBJRig && player.useBOBJModel) {
 			this._BOBJRig.applyAction(this._action, frame);
 			this._fireTriggers(player, totalTicks);
