@@ -554,11 +554,11 @@ export class SkinViewer {
 		this.onKeyDown = (event: KeyboardEvent) => {
 			if (event.code === "Space") {
 				event.preventDefault();
-				this.animation?.playJump();
+				this.doAction(animation => animation.playJump());
 			}
 
-			if (event.code === "ShiftLeft" && this.animation) {
-				this.animation.playCrouch(true);
+			if (event.code === "ShiftLeft") {
+				this.doAction(animation => animation.playCrouch(true));
 			}
 		};
 
@@ -575,8 +575,8 @@ export class SkinViewer {
 		this.onMouseDown = (event: MouseEvent) => {
 			this.isUserRotating = true;
 
-			if (event.button === 0 && this.animation) {
-				this.animation.playSwing();
+			if (event.button === 0) {
+				this.doAction(animation => animation.playSwing());
 			}
 		};
 
@@ -602,6 +602,28 @@ export class SkinViewer {
 		this.canvas.addEventListener("touchend", this.onTouchEnd);
 	}
 
+	private doAction(fn: (animation: PlayerAnimation) => void): void {
+		const current = this.animation;
+		if (!current) return;
+
+		const next = current.interruptForAction() ?? current;
+		if (next !== current) {
+			this.animation = next;
+		}
+
+		fn(next);
+	}
+
+	private interruptEmote(): void {
+		const current = this.animation;
+		if (!current) return;
+
+		const next = current.interruptForAction();
+		if (next) {
+			this.animation = next;
+		}
+	}
+
 	private updateComposerSize(): void {
 		this.composer.setSize(this.width, this.height);
 		const pixelRatio = this.renderer.getPixelRatio();
@@ -618,6 +640,7 @@ export class SkinViewer {
 		this.skinTexture.magFilter = NearestFilter;
 		this.skinTexture.minFilter = NearestFilter;
 		this.playerObject.skin.map = this.skinTexture;
+		this.playerObject.bobjRig?.setBodyTexture(this.skinTexture);
 	}
 
 	private recreateCapeTexture(): void {
@@ -660,6 +683,8 @@ export class SkinViewer {
 	): S extends TextureSource ? void : Promise<void>;
 
 	loadSkin(source: TextureSource | RemoteImage | null, options: SkinLoadOptions = {}): void | Promise<void> {
+		this.interruptEmote();
+
 		if (source === null) {
 			this.resetSkin();
 		} else if (isTextureSource(source)) {
@@ -671,6 +696,8 @@ export class SkinViewer {
 			} else {
 				this.playerObject.skin.modelType = options.model;
 			}
+
+			this.playerObject.syncBOBJModelType();
 
 			if (options.makeVisible !== false) {
 				this.playerObject.skin.visible = true;
@@ -693,8 +720,11 @@ export class SkinViewer {
 	}
 
 	resetSkin(): void {
+		this.interruptEmote();
+
 		this.playerObject.skin.visible = false;
 		this.playerObject.skin.map = null;
+		this.playerObject.bobjRig?.setBodyTexture(null);
 		if (this.skinTexture !== null) {
 			this.skinTexture.dispose();
 			this.skinTexture = null;
@@ -708,6 +738,8 @@ export class SkinViewer {
 	): S extends TextureSource ? void : Promise<void>;
 
 	loadCape(source: TextureSource | RemoteImage | null, options: CapeLoadOptions = {}): void | Promise<void> {
+		this.interruptEmote();
+
 		if (source === null) {
 			this.resetCape();
 		} else if (isTextureSource(source)) {
@@ -724,6 +756,8 @@ export class SkinViewer {
 	}
 
 	resetCape(): void {
+		this.interruptEmote();
+
 		this.playerObject.cape.visible = false;
 		this.playerObject.elytra.visible = false;
 		this.playerObject.cape.map = null;
@@ -814,6 +848,8 @@ export class SkinViewer {
 		source: TextureSource | RemoteImage | null,
 		options: DragonWingsRenderOptions = {}
 	): void | Promise<void> {
+		this.interruptEmote();
+
 		if (source === null) {
 			this.resetDragonWings();
 		} else if (isTextureSource(source)) {
@@ -836,6 +872,8 @@ export class SkinViewer {
 	}
 
 	resetDragonWings(): void {
+		this.interruptEmote();
+
 		this.playerObject.dragonWings.visible = false;
 		this.playerObject.dragonWings.map = null;
 
@@ -945,6 +983,7 @@ export class SkinViewer {
 				canvas.width = size;
 				canvas.height = size;
 
+				// eslint-disable-next-line
 				const ctx = canvas.getContext("2d")!;
 
 				ctx.translate(size / 2, size / 2);

@@ -7,7 +7,7 @@ import {
 	FrontSide,
 	Group,
 	Mesh,
-	MeshStandardMaterial,
+	MeshBasicMaterial,
 	Object3D,
 	PlaneGeometry,
 	Quaternion,
@@ -15,6 +15,7 @@ import {
 	Vector2,
 	Vector3,
 } from "three";
+import type { EmoteBOBJRig } from "./skinview3d.js";
 
 function setBoxUVs(
 	box: BoxGeometry,
@@ -261,18 +262,18 @@ export class SkinObject extends Bone {
 	private slim = false;
 
 	private _map: Texture | null = null;
-	private layer1Material: MeshStandardMaterial;
-	private layer1MaterialBiased: MeshStandardMaterial;
-	private layer2Material: MeshStandardMaterial;
-	private layer2MaterialBiased: MeshStandardMaterial;
+	private layer1Material: MeshBasicMaterial;
+	private layer1MaterialBiased: MeshBasicMaterial;
+	private layer2Material: MeshBasicMaterial;
+	private layer2MaterialBiased: MeshBasicMaterial;
 
 	constructor() {
 		super();
 
-		this.layer1Material = new MeshStandardMaterial({
+		this.layer1Material = new MeshBasicMaterial({
 			side: FrontSide,
 		});
-		this.layer2Material = new MeshStandardMaterial({
+		this.layer2Material = new MeshBasicMaterial({
 			side: DoubleSide,
 			transparent: true,
 			alphaTest: 1e-5,
@@ -494,12 +495,12 @@ export class SkinObject extends Bone {
 export class CapeObject extends Bone {
 	readonly cape: Mesh;
 
-	private material: MeshStandardMaterial;
+	private material: MeshBasicMaterial;
 
 	constructor() {
 		super();
 
-		this.material = new MeshStandardMaterial({
+		this.material = new MeshBasicMaterial({
 			side: DoubleSide,
 			transparent: true,
 			alphaTest: 1e-5,
@@ -529,12 +530,12 @@ export class ElytraObject extends Bone {
 	readonly leftWing: Group;
 	readonly rightWing: Group;
 
-	private material: MeshStandardMaterial;
+	private material: MeshBasicMaterial;
 
 	constructor() {
 		super();
 
-		this.material = new MeshStandardMaterial({
+		this.material = new MeshBasicMaterial({
 			side: DoubleSide,
 			transparent: true,
 			alphaTest: 1e-5,
@@ -598,12 +599,12 @@ export class DragonWingsObject extends Bone {
 	readonly leftWing: Group;
 	readonly rightWing: Group;
 
-	private material: MeshStandardMaterial;
+	private material: MeshBasicMaterial;
 
 	constructor() {
 		super();
 
-		this.material = new MeshStandardMaterial({
+		this.material = new MeshBasicMaterial({
 			side: DoubleSide,
 			transparent: true,
 			alphaTest: 0.1,
@@ -698,12 +699,12 @@ export class EarsObject extends Bone {
 	readonly rightEar: Mesh;
 	readonly leftEar: Mesh;
 
-	private material: MeshStandardMaterial;
+	private material: MeshBasicMaterial;
 
 	constructor() {
 		super();
 
-		this.material = new MeshStandardMaterial({
+		this.material = new MeshBasicMaterial({
 			side: FrontSide,
 		});
 		const earBox = new BoxGeometry(8, 8, 4 / 3);
@@ -743,6 +744,11 @@ export class PlayerObject extends Group {
 	readonly wings: DragonWingsObject;
 	readonly ears: EarsObject;
 
+	private _BOBJRig: EmoteBOBJRig | null = null;
+	private _BOBJDefaultRig: EmoteBOBJRig | null = null;
+	private _BOBJSlimRig: EmoteBOBJRig | null = null;
+	private _useBOBJModel = false;
+
 	constructor() {
 		super();
 
@@ -781,6 +787,81 @@ export class PlayerObject extends Group {
 		this.ears.position.z = 2 / 3;
 		this.ears.visible = false;
 		this.skin.head.add(this.ears);
+	}
+
+	setBOBJRig(rig: EmoteBOBJRig | null): void {
+		if (this._BOBJRig) {
+			this.remove(this._BOBJRig.object);
+		}
+
+		this._BOBJRig = rig;
+
+		if (rig) {
+			rig.object.visible = this._useBOBJModel;
+			rig.setBodyTexture(this.skin.map);
+			this.add(rig.object);
+		}
+
+		this._setBOBJCosmetics();
+	}
+
+	private _setBOBJCosmetics(): void {
+		const rig = this._useBOBJModel ? this._BOBJRig : null;
+
+		for (const cosmetic of [this.cape, this.elytra, this.dragonWings]) {
+			if (!rig || !rig.attachCosmetic(cosmetic)) {
+				this.skin.body.add(cosmetic);
+			}
+		}
+	}
+
+	setBOBJRigs(defaultRig: EmoteBOBJRig | null, slimRig: EmoteBOBJRig | null): void {
+		this._BOBJDefaultRig = defaultRig;
+		this._BOBJSlimRig = slimRig;
+
+		this.setBOBJRig(this.skin.modelType === "slim" ? slimRig : defaultRig);
+	}
+
+	syncBOBJModelType(): void {
+		if (!this._BOBJDefaultRig && !this._BOBJSlimRig) return;
+
+		const rig = this.skin.modelType === "slim" ? this._BOBJSlimRig : this._BOBJDefaultRig;
+
+		if (rig !== this._BOBJRig) {
+			this.setBOBJRig(rig);
+		} else {
+			rig?.setBodyTexture(this.skin.map);
+		}
+	}
+
+	get bobjRig(): EmoteBOBJRig | null {
+		return this._BOBJRig;
+	}
+
+	get useBOBJModel(): boolean {
+		return this._useBOBJModel;
+	}
+
+	set useBOBJModel(value: boolean) {
+		this._useBOBJModel = value;
+
+		for (const part of [
+			this.skin.head,
+			this.skin.body,
+			this.skin.rightArm,
+			this.skin.leftArm,
+			this.skin.rightLeg,
+			this.skin.leftLeg,
+		]) {
+			part.innerLayer.visible = !value;
+			part.outerLayer.visible = !value;
+		}
+
+		if (this._BOBJRig) {
+			this._BOBJRig.object.visible = value;
+		}
+
+		this._setBOBJCosmetics();
 	}
 
 	get cosmetics(): Cosmetic[] {

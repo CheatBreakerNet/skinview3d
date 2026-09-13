@@ -473,6 +473,13 @@ export abstract class PlayerAnimation {
 	}
 
 	/**
+	 * Interrupts the animation if an action is triggered.
+	 */
+	interruptForAction(): PlayerAnimation | null {
+		return null;
+	}
+
+	/**
 	 * Stops all currently active animation states.
 	 */
 	stop(): void {
