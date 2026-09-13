@@ -46,6 +46,9 @@ export function sampleKeyframes(keyframes, time, interpolate) {
     const easing = segment.start.easing ?? linear;
     return interpolate(segment.start.value, segment.end.value, easing(segment.progress));
 }
+export function degToRad(deg) {
+    return (deg * Math.PI) / 180;
+}
 /**
  * Restricts a value to a given range.
  */
@@ -60,8 +63,8 @@ export function clamp01(value) {
 }
 /**
  * Linearly interpolates between 2 values
- * t = 0 -> a
- * t = 1 -> b
+ * t = 0 → a
+ * t = 1 → b
  */
 export function lerp(a, b, t) {
     return a + (b - a) * t;
@@ -80,6 +83,19 @@ export function inverseLerp(a, b, value) {
  */
 export function remap(value, inMin, inMax, outMin, outMax) {
     return lerp(outMin, outMax, inverseLerp(inMin, inMax, value));
+}
+/**
+ * Cubic Bezier evaluation
+ */
+export function bezier(p0, p1, p2, p3, t) {
+    const inv = 1 - t;
+    return inv * inv * inv * p0 + 3 * inv * inv * t * p1 + 3 * inv * t * t * p2 + t * t * t * p3;
+}
+/**
+ * Random float in [-half, half]
+ */
+export function jitter(half) {
+    return Math.random() * half * 2 - half;
 }
 // No easing
 export const linear = t => t;
@@ -143,7 +159,7 @@ export const Easings = {
 };
 /**
  * Produces a symmetric arc using an easing function
- * 0 -> height -> 0
+ * 0 → height → 0
  */
 export function easingArc(t, height = 1, easing = easeInOutSine) {
     t = clamp01(t);

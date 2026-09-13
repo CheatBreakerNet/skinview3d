@@ -298,6 +298,8 @@ export declare class SkinViewer {
     private readonly scratchVector3;
     private readonly boundDraw;
     constructor(options?: SkinViewerOptions);
+    private doAction;
+    private interruptEmote;
     private updateComposerSize;
     private recreateSkinTexture;
     private recreateCapeTexture;

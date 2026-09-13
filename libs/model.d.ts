@@ -1,18 +1,6 @@
 import type { ModelType } from "skinview-utils";
 import { Euler, Group, Mesh, Object3D, Quaternion, Texture, Vector3 } from "three";
-/**
- * A Bone is any node that should support layered, animatable position/rotation. Without
- * being limited to the player's actual skeletal joints.
- *
- * Every bone has three layers of transform that are composed together each frame via {@link commit}:
- * - `base*`    - the rest-pose offset from the parent. Set once, never touched by animations.
- * - `origin*`  - written by the currently active "pose" animation
- * - `offset*`  - written by transient modifier states (basically swinging and jumping)
- *
- * Notice: because `commit()` recomputes the underlying position/rotation/quaternion from the
- * layers above, those properties are effectively read-only outputs on a bone - anything written above it
- * will be overwritten next time `commit()` runs.
- */
+import type { EmoteBOBJRig } from "./skinview3d.js";
 export declare class Bone extends Group {
     readonly basePosition: Vector3;
     readonly baseRotation: Euler;
@@ -28,38 +16,13 @@ export declare class Bone extends Group {
     setOriginPosition(x: number, y: number, z: number): void;
     setOffsetPosition(x: number, y: number, z: number): void;
     setOriginQuaternion(q: Quaternion): void;
-    /**
-     * Resets the rest-pose (base) position and rotation of this bone.
-     */
     resetBase(): void;
-    /**
-     * Resets the origin position and rotation of this bone.
-     */
     resetOrigin(): void;
-    /**
-     * Resets the offset position and rotation of this bone.
-     */
     resetOffset(): void;
-    /**
-     * Resets base + origin + offset all at once, and commits the result.
-     */
     resetAll(): void;
-    /**
-     * Composes a base + origin + offset into the actual position and rotation of this bone.
-     * This is the only place that writes to the underlying position/rotation/quaternion properties.
-     */
     commit(): void;
 }
-/**
- * Recursively commits every {@link Bone} in the given subtree (including the
- * root itself, if it is a Bone). Call order doesn't matter: each bone's
- * commit() only depends on its own base/origin/offset values, never on its
- * parent's committed transform.
- */
 export declare function commitBones(root: Object3D): void;
-/**
- * Notice that innerLayer and outerLayer may NOT be the direct children of the Group.
- */
 export declare class BodyPart extends Bone {
     readonly innerLayer: Object3D;
     readonly outerLayer: Object3D;
@@ -104,10 +67,6 @@ export declare class ElytraObject extends Bone {
     private material;
     constructor();
     resetJoints(): void;
-    /**
-     * Mirrors the position & rotation of left wing,
-     * and apply them to the right wing.
-     */
     updateRightWing(): void;
     get map(): Texture | null;
     set map(newMap: Texture | null);
@@ -115,6 +74,8 @@ export declare class ElytraObject extends Bone {
 export declare class DragonWingsObject extends Bone {
     readonly leftWing: Group;
     readonly rightWing: Group;
+    readonly leftWingTip: Object3D;
+    readonly rightWingTip: Object3D;
     private material;
     constructor();
     private createWing;
@@ -132,9 +93,9 @@ export declare class EarsObject extends Bone {
     set map(newMap: Texture | null);
 }
 export type Cosmetic = "cape" | "dragonWings";
-/** @deprecated Use {@link Cosmetic} */
 export type BackEquipment = "cape" | "elytra" | "wings";
 export declare class PlayerObject extends Group {
+    cosmeticTimer: number;
     readonly skin: SkinObject;
     readonly cape: CapeObject;
     readonly elytra: ElytraObject;
@@ -142,15 +103,26 @@ export declare class PlayerObject extends Group {
     /** @deprecated Use {@link dragonWings} */
     readonly wings: DragonWingsObject;
     readonly ears: EarsObject;
+    private _BOBJRig;
+    private _BOBJDefaultRig;
+    private _BOBJSlimRig;
+    private _useBOBJModel;
     constructor();
+    setBOBJRig(rig: EmoteBOBJRig | null): void;
+    private _setBOBJCosmetics;
+    setBOBJRigs(defaultRig: EmoteBOBJRig | null, slimRig: EmoteBOBJRig | null): void;
+    syncBOBJModelType(): void;
+    get bobjRig(): EmoteBOBJRig | null;
+    get useBOBJModel(): boolean;
+    set useBOBJModel(value: boolean);
     get cosmetics(): Cosmetic[];
     set cosmetics(values: readonly Cosmetic[]);
     get capeElytra(): boolean;
     set capeElytra(value: boolean);
     setDragonWingsVisible(value: boolean): void;
-    /** @deprecated */
+    /** @deprecated Use {@link cosmetics} */
     get backEquipment(): BackEquipment | null;
-    /** @deprecated */
+    /** @deprecated Use {@link cosmetics} */
     set backEquipment(value: BackEquipment | null);
     resetJoints(): void;
 }

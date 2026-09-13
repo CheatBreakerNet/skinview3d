@@ -96,10 +96,6 @@ export declare abstract class PlayerAnimation {
     private _nextId;
     private readonly _addons;
     constructor();
-    /**
-     * Mark a modifier state as active or inactive,
-     * keeping the internal state set consistent.
-     */
     private setState;
     /**
      * Which modifier states are currently active.
@@ -161,62 +157,20 @@ export declare abstract class PlayerAnimation {
      * @param deltaTime - time elapsed since last call
      */
     update(player: PlayerObject, deltaTime: number): void;
-    /**
-     * Animate the dragon wings using the client's math.
-     * @param player - The player object.
-     * @param wingPosition - The animation position/time.
-     */
-    protected animateWings(player: PlayerObject, wingPosition: number): void;
+    protected animateWings(player: PlayerObject): void;
     get isIdle(): boolean;
-    /**
-     * Animate a player jump.
-     */
     playJump(): void;
-    /**
-     * Whether a jump animation is currently playing.
-     */
     get isJumping(): boolean;
-    /**
-     * Animates a single jump.
-     * @param player - The player object.
-     * @param delta - Scaled time elapsed since last call.
-     */
     animateJump(player: PlayerObject, delta: number): void;
-    /**
-     * Animate a player swing.
-     */
     playSwing(): void;
-    /**
-     * Whether a swing animation is currently playing.
-     */
     get isSwinging(): boolean;
-    /**
-     * Animates a single swing.
-     * @param player - The player object.
-     * @param delta - Scaled time elapsed since last call.
-     */
     animateSwing(player: PlayerObject, delta: number): void;
-    /**
-     * Animate a player crouch.
-     * @param crouch - The player crouch state.
-     */
     playCrouch(crouch?: boolean): void;
-    /** Whether a crouch animation is currently playing. */
     get isCrouching(): boolean;
-    /**
-     * Animates a crouch.
-     * @param player - The player object.
-     * @param _delta - Scaled time elapsed since last call.
-     */
     animateCrouch(player: PlayerObject): void;
     getState(): AnimationState;
-    /**
-     * Stops all currently active animation states.
-     */
+    interruptForAction(): PlayerAnimation | null;
     stop(): void;
-    /**
-     * Resets the animation to its initial state.
-     */
     reset(): void;
 }
 /**

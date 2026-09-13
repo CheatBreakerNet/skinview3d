@@ -525,10 +525,10 @@ export class SkinViewer {
         this.onKeyDown = (event) => {
             if (event.code === "Space") {
                 event.preventDefault();
-                this.animation?.playJump();
+                this.doAction(animation => animation.playJump());
             }
-            if (event.code === "ShiftLeft" && this.animation) {
-                this.animation.playCrouch(true);
+            if (event.code === "ShiftLeft") {
+                this.doAction(animation => animation.playCrouch(true));
             }
         };
         this.onKeyUp = (event) => {
@@ -541,8 +541,8 @@ export class SkinViewer {
         };
         this.onMouseDown = (event) => {
             this.isUserRotating = true;
-            if (event.button === 0 && this.animation) {
-                this.animation.playSwing();
+            if (event.button === 0) {
+                this.doAction(animation => animation.playSwing());
             }
         };
         this.onMouseUp = () => {
@@ -562,6 +562,25 @@ export class SkinViewer {
         this.canvas.addEventListener("touchmove", this.onTouchMove);
         this.canvas.addEventListener("touchend", this.onTouchEnd);
     }
+    doAction(fn) {
+        const current = this.animation;
+        if (!current)
+            return;
+        const next = current.interruptForAction() ?? current;
+        if (next !== current) {
+            this.animation = next;
+        }
+        fn(next);
+    }
+    interruptEmote() {
+        const current = this.animation;
+        if (!current)
+            return;
+        const next = current.interruptForAction();
+        if (next) {
+            this.animation = next;
+        }
+    }
     updateComposerSize() {
         this.composer.setSize(this.width, this.height);
         const pixelRatio = this.renderer.getPixelRatio();
@@ -577,6 +596,7 @@ export class SkinViewer {
         this.skinTexture.magFilter = NearestFilter;
         this.skinTexture.minFilter = NearestFilter;
         this.playerObject.skin.map = this.skinTexture;
+        this.playerObject.bobjRig?.setBodyTexture(this.skinTexture);
     }
     recreateCapeTexture() {
         if (this.capeTexture !== null) {
@@ -609,6 +629,7 @@ export class SkinViewer {
         this.playerObject.dragonWings.visible = cosmetic === "dragonWings";
     }
     loadSkin(source, options = {}) {
+        this.interruptEmote();
         if (source === null) {
             this.resetSkin();
         }
@@ -621,6 +642,7 @@ export class SkinViewer {
             else {
                 this.playerObject.skin.modelType = options.model;
             }
+            this.playerObject.syncBOBJModelType();
             if (options.makeVisible !== false) {
                 this.playerObject.skin.visible = true;
             }
@@ -641,14 +663,17 @@ export class SkinViewer {
         }
     }
     resetSkin() {
+        this.interruptEmote();
         this.playerObject.skin.visible = false;
         this.playerObject.skin.map = null;
+        this.playerObject.bobjRig?.setBodyTexture(null);
         if (this.skinTexture !== null) {
             this.skinTexture.dispose();
             this.skinTexture = null;
         }
     }
     loadCape(source, options = {}) {
+        this.interruptEmote();
         if (source === null) {
             this.resetCape();
         }
@@ -665,6 +690,7 @@ export class SkinViewer {
         }
     }
     resetCape() {
+        this.interruptEmote();
         this.playerObject.cape.visible = false;
         this.playerObject.elytra.visible = false;
         this.playerObject.cape.map = null;
@@ -736,6 +762,7 @@ export class SkinViewer {
         this.playerObject.wings.map = this.wingsTexture;
     }
     loadDragonWings(source, options = {}) {
+        this.interruptEmote();
         if (source === null) {
             this.resetDragonWings();
         }
@@ -757,6 +784,7 @@ export class SkinViewer {
         }
     }
     resetDragonWings() {
+        this.interruptEmote();
         this.playerObject.dragonWings.visible = false;
         this.playerObject.dragonWings.map = null;
         if (this.wingsTexture !== null) {
@@ -828,6 +856,7 @@ export class SkinViewer {
                 const canvas = document.createElement("canvas");
                 canvas.width = size;
                 canvas.height = size;
+                // eslint-disable-next-line
                 const ctx = canvas.getContext("2d");
                 ctx.translate(size / 2, size / 2);
                 ctx.rotate((rotation * Math.PI) / 180);
