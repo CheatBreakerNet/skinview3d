@@ -1,6 +1,7 @@
 import * as skinview3d from "../src/skinview3d";
 import type { ModelType } from "skinview-utils";
-import type { BackEquipment } from "../src/model";
+import type { Cosmetic, EmoteDefinition, SkinViewerFocus } from "../src/skinview3d";
+import { TextureLoader } from "three";
 
 import "./style.css";
 
@@ -14,14 +15,278 @@ const availableAnimations = {
 	fly: new skinview3d.FlyAnimation(),
 	swim: new skinview3d.SwimAnimation(),
 	sit: new skinview3d.SitAnimation(),
-	wardrobe_idle: new skinview3d.WardrobeIdleAnimation(),
-	wardrobe_idle2: new skinview3d.WardrobeIdle2Animation(),
 };
 
 let skinViewer: skinview3d.SkinViewer;
 
-// id of the addon animation added via `animation.addAnimation()`, if any is active
-let spinAddonId: number | undefined;
+let emoteRegistry: readonly EmoteDefinition[] = [];
+let emoteAnimation: skinview3d.EmoteAnimation | null = null;
+let particleSystem: skinview3d.ParticleSystem | null = null;
+let bobjRig: skinview3d.EmoteBOBJRig | null = null;
+let slimBobjRig: skinview3d.EmoteBOBJRig | null = null;
+let slimBobjRigPromise: Promise<skinview3d.EmoteBOBJRig> | null = null;
+let bobjActions: skinview3d.BOBJData | null = null;
+
+let activeEmoteKey: string | null = null;
+let preEmoteAnimationValue = "";
+let lastParticleTime: number | null = null;
+
+function findEmote(key: string | null): EmoteDefinition | null {
+	if (key === null) return null;
+	return emoteRegistry.find(e => e.key === key) ?? null;
+}
+
+function checkedAnimationRadioValue(): string {
+	const checked = document.querySelector<HTMLInputElement>('input[type="radio"][name="animation"]:checked');
+	return checked?.value ?? "";
+}
+
+function setCheckedAnimationRadio(value: string): void {
+	const radio =
+		document.querySelector<HTMLInputElement>(`input[type="radio"][name="animation"][value="${value}"]`) ??
+		(document.getElementById("animation_none") as HTMLInputElement | null);
+	if (radio) radio.checked = true;
+}
+
+function updateEmoteUI(): void {
+	const buttons = document.querySelectorAll<HTMLButtonElement>("#emote_grid .emote-btn");
+	for (const button of buttons) {
+		button.classList.toggle("active", button.dataset.key === activeEmoteKey);
+	}
+
+	const stopButton = document.getElementById("emote_stop") as HTMLButtonElement | null;
+	if (stopButton) stopButton.disabled = activeEmoteKey === null;
+
+	const status = document.getElementById("emote_status");
+	if (status) {
+		const active = findEmote(activeEmoteKey);
+		if (active) {
+			status.textContent = `Now playing: ${active.label}${active.looping ? " (loops until stopped)" : " (plays once)"}`;
+		} else if (emoteRegistry.length > 0) {
+			status.textContent = `${emoteRegistry.length} emotes loaded. Pick one below.`;
+		} else {
+			status.textContent = "Loading emotes\u2026";
+		}
+	}
+}
+
+async function playEmote(key: string): Promise<void> {
+	if (!emoteAnimation) return;
+
+	try {
+		await ensureBobjRigForSkin();
+	} catch (error) {
+		console.error("Unable to load the slim BOBJ emote model:", error);
+		return;
+	}
+
+	const definition = findEmote(key);
+	if (!definition) return;
+
+	if (activeEmoteKey === key && definition.looping) {
+		stopEmote(true);
+		return;
+	}
+
+	if (activeEmoteKey === null) {
+		preEmoteAnimationValue = checkedAnimationRadioValue();
+	}
+
+	activeEmoteKey = key;
+
+	if (skinViewer.animation !== emoteAnimation) {
+		skinViewer.animation = emoteAnimation;
+	}
+
+	emoteAnimation.playEmote(definition, emoteRegistry);
+
+	const animationSpeed = document.getElementById("animation_speed") as HTMLInputElement;
+	emoteAnimation.speed = Number(animationSpeed?.value) || 1;
+	emoteAnimation.paused = false;
+
+	for (const radio of document.querySelectorAll<HTMLInputElement>('input[type="radio"][name="animation"]')) {
+		radio.checked = false;
+	}
+
+	updateEmoteUI();
+	syncAllowedActionCheckboxes();
+}
+
+function stopEmote(restorePrevious: boolean): void {
+	if (activeEmoteKey === null) return;
+
+	activeEmoteKey = null;
+	emoteAnimation?.playEmote(null);
+
+	if (restorePrevious) {
+		setCheckedAnimationRadio(preEmoteAnimationValue);
+
+		if (preEmoteAnimationValue === "") {
+			skinViewer.animation = null;
+		} else {
+			// @ts-ignore
+			skinViewer.animation = availableAnimations[preEmoteAnimationValue];
+			if (skinViewer.animation) {
+				const animationSpeed = document.getElementById("animation_speed") as HTMLInputElement;
+				skinViewer.animation.speed = Number(animationSpeed?.value) || 1;
+			}
+		}
+	}
+
+	updateEmoteUI();
+	syncAllowedActionCheckboxes();
+}
+
+function populateEmoteGrid(): void {
+	const grid = document.getElementById("emote_grid");
+	if (!grid) return;
+
+	grid.innerHTML = "";
+
+	for (const emote of emoteRegistry) {
+		const button = document.createElement("button");
+		button.type = "button";
+		button.className = "emote-btn";
+		button.dataset.key = emote.key;
+		button.textContent = emote.label;
+
+		if (emote.looping) {
+			const indicator = document.createElement("span");
+			indicator.className = "loop-indicator";
+			indicator.textContent = " \u27f3";
+			button.appendChild(indicator);
+		}
+
+		button.addEventListener("click", () => playEmote(emote.key));
+
+		grid.appendChild(button);
+	}
+
+	const stopButton = document.getElementById("emote_stop");
+	stopButton?.addEventListener("click", () => stopEmote(true));
+
+	updateEmoteUI();
+}
+
+function emoticonsTick(now: number): void {
+	if (particleSystem) {
+		const last = lastParticleTime ?? now;
+		const dt = Math.min((now - last) / 1000, 0.1);
+		lastParticleTime = now;
+
+		particleSystem.update(dt, skinViewer?.camera);
+	}
+
+	if (emoteAnimation && activeEmoteKey !== null) {
+		const definition = findEmote(activeEmoteKey);
+		if (
+			definition &&
+			!definition.looping &&
+			emoteAnimation.duration > 0 &&
+			emoteAnimation.progress >= emoteAnimation.duration
+		) {
+			stopEmote(true);
+		}
+	}
+
+	requestAnimationFrame(emoticonsTick);
+}
+
+async function loadBobjRig(model: ModelType): Promise<skinview3d.EmoteBOBJRig> {
+	const prefix = model === "slim" ? "slim" : "default";
+	const [bobjText, configText, propsText] = await Promise.all([
+		fetch(`./emoticons/${prefix}.bobj`).then(res => {
+			if (!res.ok) throw new Error(`Failed to load ${prefix}.bobj (${res.status})`);
+			return res.text();
+		}),
+		fetch(`./emoticons/${prefix}.json`).then(res => {
+			if (!res.ok) throw new Error(`Failed to load ${prefix}.json (${res.status})`);
+			return res.text();
+		}),
+		fetch("./emoticons/props.bobj").then(res => {
+			if (!res.ok) throw new Error(`Failed to load props.bobj (${res.status})`);
+			return res.text();
+		}),
+	]);
+
+	const baseMesh = skinview3d.parseMesh(bobjText);
+	const propsMesh = skinview3d.parseMesh(propsText);
+	const rigFile = skinview3d.mergeBobjMesh(baseMesh, propsMesh);
+	const rigConfig = JSON.parse(configText) as skinview3d.PlayerRigConfig;
+	return new skinview3d.EmoteBOBJRig(rigFile, rigConfig);
+}
+
+async function ensureBobjRigForSkin(): Promise<skinview3d.EmoteBOBJRig | null> {
+	const model = skinview3dModelType(skinViewer.playerObject.skin.modelType);
+
+	if (model === "slim") {
+		if (!slimBobjRigPromise) {
+			slimBobjRigPromise = loadBobjRig("slim");
+		}
+		slimBobjRig = await slimBobjRigPromise;
+	} else if (!bobjRig) {
+		return null;
+	}
+
+	skinViewer.playerObject.setBOBJRigs(bobjRig, slimBobjRig);
+	const activeRig = model === "slim" ? slimBobjRig : bobjRig;
+	if (activeRig) activeRig.setMeshTexture("popcorn", popcornTexture);
+	emoteAnimation?.setBobjRig(activeRig ?? null);
+	return activeRig ?? null;
+}
+
+function skinview3dModelType(model: ModelType): "default" | "slim" {
+	return model === "slim" ? "slim" : "default";
+}
+
+let popcornTexture: import("three").Texture;
+
+async function initializeEmoticons(): Promise<void> {
+	const textureLoader = new TextureLoader();
+
+	const [actionsBobjText, loadedPopcornTexture, saltTexture] = await Promise.all([
+		fetch("./emoticons/actions.bobj").then(res => {
+			if (!res.ok) throw new Error(`Failed to load actions.bobj (${res.status})`);
+			return res.text();
+		}),
+		textureLoader.loadAsync("./emoticons/popcorn.png"),
+		textureLoader.loadAsync("./emoticons/particles.png"),
+	]);
+
+	popcornTexture = loadedPopcornTexture;
+	bobjActions = skinview3d.parseActions(actionsBobjText);
+	bobjRig = await loadBobjRig("default");
+	bobjRig.setMeshTexture("popcorn", popcornTexture);
+	skinViewer.playerObject.setBOBJRigs(bobjRig, null);
+	syncEmoteSkinTexture();
+
+	particleSystem = new skinview3d.ParticleSystem({ popcorn: popcornTexture, salt: saltTexture });
+	skinViewer.scene.add(particleSystem);
+
+	emoteRegistry = skinview3d.buildEmoteRegistry(bobjActions);
+	emoteAnimation = new skinview3d.EmoteAnimation(bobjActions, particleSystem, bobjRig);
+
+	populateEmoteGrid();
+	requestAnimationFrame(emoticonsTick);
+}
+
+function reattachEmoticons(): void {
+	if (particleSystem) {
+		skinViewer.scene.add(particleSystem);
+	}
+
+	if (bobjRig || slimBobjRig) {
+		skinViewer.playerObject.setBOBJRigs(bobjRig, slimBobjRig);
+		const activeRig = skinViewer.playerObject.skin.modelType === "slim" ? slimBobjRig : bobjRig;
+		activeRig?.setBodyTexture(skinViewer.playerObject.skin.map);
+		emoteAnimation?.setBobjRig(activeRig ?? null);
+	}
+
+	activeEmoteKey = null;
+	preEmoteAnimationValue = "";
+	emoteAnimation?.playEmote(null);
+	updateEmoteUI();
+}
 
 function obtainTextureUrl(id: string): string {
 	const urlInput = document.getElementById(id) as HTMLInputElement;
@@ -46,6 +311,11 @@ function obtainTextureUrl(id: string): string {
 	return URL.createObjectURL(file);
 }
 
+function syncEmoteSkinTexture(): void {
+	const rig = skinViewer.playerObject.bobjRig;
+	if (rig) rig.setBodyTexture(skinViewer.playerObject.skin.map);
+}
+
 function reloadSkin(): void {
 	const input = document.getElementById("skin_url") as HTMLInputElement;
 	const url = obtainTextureUrl("skin_url");
@@ -61,12 +331,29 @@ function reloadSkin(): void {
 				model: skinModel?.value as ModelType,
 				ears: earsSource?.value === "current_skin",
 			})
-			.then(() => input?.setCustomValidity(""))
+			.then(async () => {
+				await ensureBobjRigForSkin();
+				syncEmoteSkinTexture();
+				input?.setCustomValidity("");
+			})
 			.catch(e => {
 				input?.setCustomValidity("Image can't be loaded.");
 				console.error(e);
 			});
 	}
+}
+
+function syncCosmetics(): void {
+	const capeEnabled = (document.getElementById("cosmetic_cape") as HTMLInputElement)?.checked ?? false;
+	const dragonWingsEnabled = (document.getElementById("cosmetic_dragon_wings") as HTMLInputElement)?.checked ?? false;
+	const capeStyle = (document.getElementById("cape_style") as HTMLSelectElement)?.value;
+
+	skinViewer.playerObject.capeElytra = capeStyle === "elytra";
+
+	const cosmetics: Cosmetic[] = [];
+	if (capeEnabled) cosmetics.push("cape");
+	if (dragonWingsEnabled) cosmetics.push("dragonWings");
+	skinViewer.playerObject.cosmetics = cosmetics;
 }
 
 function reloadCape(): void {
@@ -76,12 +363,12 @@ function reloadCape(): void {
 		skinViewer.loadCape(null);
 		input?.setCustomValidity("");
 	} else {
-		const selectedBackEquipment = document.querySelector(
-			'input[type="radio"][name="back_equipment"]:checked'
-		) as HTMLInputElement;
 		skinViewer
-			.loadCape(url, { backEquipment: selectedBackEquipment?.value as BackEquipment })
-			.then(() => input?.setCustomValidity(""))
+			.loadCape(url, { makeVisible: false })
+			.then(() => {
+				input?.setCustomValidity("");
+				syncCosmetics();
+			})
 			.catch(e => {
 				input?.setCustomValidity("Image can't be loaded.");
 				console.error(e);
@@ -89,19 +376,45 @@ function reloadCape(): void {
 	}
 }
 
-function reloadWings(): void {
-	const input = document.getElementById("wings_url") as HTMLInputElement;
-	const url = obtainTextureUrl("wings_url");
+function reloadDragonWings(): void {
+	const input = document.getElementById("dragon_wings_url") as HTMLInputElement;
+	const url = obtainTextureUrl("dragon_wings_url");
 	if (url === "") {
-		skinViewer.loadWings(null);
+		skinViewer.loadDragonWings(null);
 		input?.setCustomValidity("");
 	} else {
-		const selectedBackEquipment = document.querySelector(
-			'input[type="radio"][name="back_equipment"]:checked'
-		) as HTMLInputElement;
 		skinViewer
-			.loadWings(url, { backEquipment: selectedBackEquipment?.value as BackEquipment })
-			.then(() => input?.setCustomValidity(""))
+			.loadDragonWings(url, { makeVisible: false })
+			.then(() => {
+				input?.setCustomValidity("");
+				syncCosmetics();
+			})
+			.catch(e => {
+				input?.setCustomValidity("Image can't be loaded.");
+				console.error(e);
+			});
+	}
+}
+
+function reloadShadow(): void {
+	const input = document.getElementById("shadow_url") as HTMLInputElement;
+	const url = obtainTextureUrl("shadow_url");
+	const shadowEnabledCheckbox = document.getElementById("shadow_enabled") as HTMLInputElement;
+
+	if (url === "") {
+		if (shadowEnabledCheckbox?.checked) {
+			skinViewer.enableShadow();
+		} else {
+			skinViewer.disableShadow();
+		}
+		input?.setCustomValidity("");
+	} else {
+		skinViewer
+			.loadShadow(url)
+			.then(() => {
+				input?.setCustomValidity("");
+				if (shadowEnabledCheckbox) shadowEnabledCheckbox.checked = true;
+			})
 			.catch(e => {
 				input?.setCustomValidity("Image can't be loaded.");
 				console.error(e);
@@ -330,16 +643,21 @@ function initializeControls(): void {
 		el.addEventListener("change", e => {
 			const target = e.target as HTMLInputElement;
 
-			// switching the base animation invalidates any addon we had attached
-			spinAddonId = undefined;
 			const spinCheckbox = document.getElementById("spin_addon") as HTMLInputElement;
 			if (spinCheckbox) spinCheckbox.checked = false;
+
+			if (activeEmoteKey !== null) {
+				activeEmoteKey = null;
+				emoteAnimation?.playEmote(null);
+				updateEmoteUI();
+			}
 
 			if (target.value === "") {
 				skinViewer.animation = null;
 			} else {
 				// @ts-ignore
 				skinViewer.animation = availableAnimations[target.value];
+
 				if (skinViewer.animation && animationSpeed) {
 					skinViewer.animation.speed = Number(animationSpeed.value);
 				}
@@ -412,25 +730,28 @@ function initializeControls(): void {
 
 	initializeUploadButton("skin_url", reloadSkin);
 	initializeUploadButton("cape_url", reloadCape);
-	initializeUploadButton("wings_url", reloadWings);
+	initializeUploadButton("dragon_wings_url", reloadDragonWings);
 	initializeUploadButton("ears_url", reloadEars);
 	initializeUploadButton("panorama_url", reloadPanorama);
+	initializeUploadButton("shadow_url", reloadShadow);
 
 	const skinUrl = document.getElementById("skin_url") as HTMLInputElement;
 	const skinModel = document.getElementById("skin_model") as HTMLSelectElement;
 	const capeUrl = document.getElementById("cape_url") as HTMLInputElement;
-	const wingsUrl = document.getElementById("wings_url") as HTMLInputElement;
+	const dragonWingsUrl = document.getElementById("dragon_wings_url") as HTMLInputElement;
 	const earsSource = document.getElementById("ears_source") as HTMLSelectElement;
 	const earsUrl = document.getElementById("ears_url") as HTMLInputElement;
 	const panoramaUrl = document.getElementById("panorama_url") as HTMLInputElement;
+	const shadowUrl = document.getElementById("shadow_url") as HTMLInputElement;
 
 	skinUrl?.addEventListener("change", reloadSkin);
 	skinModel?.addEventListener("change", reloadSkin);
 	capeUrl?.addEventListener("change", reloadCape);
-	wingsUrl?.addEventListener("change", reloadWings);
+	dragonWingsUrl?.addEventListener("change", reloadDragonWings);
 	earsSource?.addEventListener("change", () => reloadEars());
 	earsUrl?.addEventListener("change", () => reloadEars());
 	panoramaUrl?.addEventListener("change", reloadPanorama);
+	shadowUrl?.addEventListener("change", reloadShadow);
 
 	const panoramaType = document.getElementById("panorama_type") as HTMLSelectElement;
 	panoramaType?.addEventListener("change", () => {
@@ -443,24 +764,48 @@ function initializeControls(): void {
 
 	updatePanoramaTypeVisibility();
 
-	const backEquipmentRadios = document.querySelectorAll<HTMLInputElement>('input[type="radio"][name="back_equipment"]');
-	for (const el of backEquipmentRadios) {
-		el.addEventListener("change", e => {
-			const target = e.target as HTMLInputElement;
-			if (skinViewer.playerObject.backEquipment === null) {
-				// cape texture hasn't been loaded yet
-				// this option will be processed on texture loading
-			} else {
-				skinViewer.playerObject.backEquipment = target.value as BackEquipment;
-			}
-		});
-	}
+	const cosmeticCape = document.getElementById("cosmetic_cape") as HTMLInputElement;
+	const cosmeticDragonWings = document.getElementById("cosmetic_dragon_wings") as HTMLInputElement;
+	const capeStyle = document.getElementById("cape_style") as HTMLSelectElement;
+
+	cosmeticCape?.addEventListener("change", syncCosmetics);
+	cosmeticDragonWings?.addEventListener("change", syncCosmetics);
+	capeStyle?.addEventListener("change", syncCosmetics);
+
+	const capeSwayEnabled = document.getElementById("cape_sway_enabled") as HTMLInputElement;
+	capeSwayEnabled?.addEventListener("change", e => {
+		const target = e.target as HTMLInputElement;
+		if (target.checked) {
+			skinViewer.enableCapeSway();
+		} else {
+			skinViewer.disableCapeSway();
+		}
+	});
+
+	const shadowEnabled = document.getElementById("shadow_enabled") as HTMLInputElement;
+	shadowEnabled?.addEventListener("change", e => {
+		const target = e.target as HTMLInputElement;
+		if (target.checked) {
+			skinViewer.enableShadow();
+		} else {
+			skinViewer.disableShadow();
+		}
+	});
+
+	const focusApply = document.getElementById("focus_apply");
+	focusApply?.addEventListener("click", () => {
+		const focusTarget = document.getElementById("focus_target") as HTMLSelectElement;
+		const focusZoom = document.getElementById("focus_zoom") as HTMLInputElement;
+		const zoomValue = focusZoom?.value === "" ? undefined : Number(focusZoom.value);
+		skinViewer.focus(focusTarget?.value as SkinViewerFocus, zoomValue);
+	});
 
 	const resetAll = document.getElementById("reset_all");
 
 	resetAll?.addEventListener("click", () => {
 		skinViewer.dispose();
 		initializeViewer();
+		reattachEmoticons();
 	});
 
 	const nametagText = document.getElementById("nametag_text") as HTMLInputElement;
@@ -554,9 +899,24 @@ function initializeViewer(): void {
 
 	reloadSkin();
 	reloadCape();
+	reloadDragonWings();
 	reloadEars(true);
 	reloadPanorama();
 	reloadNameTag();
+	syncCosmetics();
+
+	const capeSwayEnabled = document.getElementById("cape_sway_enabled") as HTMLInputElement;
+	if (capeSwayEnabled?.checked) {
+		skinViewer.enableCapeSway();
+	}
+
+	const shadowEnabledCheckbox = document.getElementById("shadow_enabled") as HTMLInputElement;
+	const shadowUrlValue = (document.getElementById("shadow_url") as HTMLInputElement)?.value;
+	if (shadowUrlValue) {
+		reloadShadow();
+	} else if (shadowEnabledCheckbox?.checked) {
+		skinViewer.enableShadow();
+	}
 
 	syncAllowedActionCheckboxes();
 }
@@ -564,3 +924,9 @@ function initializeViewer(): void {
 initializeViewer();
 initializeControls();
 updateStateBadges();
+
+initializeEmoticons().catch(e => {
+	console.error("Failed to load emoticons:", e);
+	const status = document.getElementById("emote_status");
+	if (status) status.textContent = "Failed to load emotes (see console).";
+});

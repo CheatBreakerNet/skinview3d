@@ -1,5 +1,5 @@
 import { inferModelType, isTextureSource, loadCapeToCanvas, loadEarsToCanvas, loadEarsToCanvasFromSkin, loadImage, loadSkinToCanvas, } from "skinview-utils";
-import { Color, PointLight, EquirectangularReflectionMapping, Group, NearestFilter, PerspectiveCamera, Scene, Texture, Vector2, Vector3, WebGLRenderer, AmbientLight, CanvasTexture, WebGLRenderTarget, FloatType, DepthTexture, Timer, Object3D, ColorManagement, CubeTexture, CubeReflectionMapping, Mesh, CircleGeometry, MeshBasicMaterial, BackSide, } from "three";
+import { Color, PointLight, EquirectangularReflectionMapping, Group, NearestFilter, PerspectiveCamera, Scene, Texture, Vector2, Vector3, WebGLRenderer, AmbientLight, CanvasTexture, WebGLRenderTarget, FloatType, DepthTexture, Timer, Object3D, ColorManagement, CubeTexture, CubeReflectionMapping, Mesh, CircleGeometry, MeshBasicMaterial, FrontSide, } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
@@ -210,7 +210,31 @@ export class SkinViewer {
             writable: true,
             value: void 0
         });
+        Object.defineProperty(this, "onBlur", {
+            enumerable: true,
+            configurable: true,
+            writable: true,
+            value: void 0
+        });
         Object.defineProperty(this, "onMouseDown", {
+            enumerable: true,
+            configurable: true,
+            writable: true,
+            value: void 0
+        });
+        Object.defineProperty(this, "onMouseUp", {
+            enumerable: true,
+            configurable: true,
+            writable: true,
+            value: void 0
+        });
+        Object.defineProperty(this, "onTouchMove", {
+            enumerable: true,
+            configurable: true,
+            writable: true,
+            value: void 0
+        });
+        Object.defineProperty(this, "onTouchEnd", {
             enumerable: true,
             configurable: true,
             writable: true,
@@ -219,7 +243,7 @@ export class SkinViewer {
         /**
          * Whether cape swaying (a subtle rotation to the cape as the
          * camera orbits around the player) is currently enabled.
-         * @defaultValue `true`
+         * @defaultValue `false`
          * @see {@link enableCapeSway}
          * @see {@link disableCapeSway}
          */
@@ -227,7 +251,7 @@ export class SkinViewer {
             enumerable: true,
             configurable: true,
             writable: true,
-            value: true
+            value: false
         });
         Object.defineProperty(this, "capeSway", {
             enumerable: true,
@@ -255,7 +279,7 @@ export class SkinViewer {
         });
         /**
          * Whether a shadow mesh (below the player) is currently enabled.
-         * @defaultValue `true`
+         * @defaultValue `false`
          * @see {@link enableShadow}
          * @see {@link disableShadow}
          */
@@ -354,6 +378,18 @@ export class SkinViewer {
             writable: true,
             value: 20
         });
+        Object.defineProperty(this, "scratchVector3", {
+            enumerable: true,
+            configurable: true,
+            writable: true,
+            value: new Vector3()
+        });
+        Object.defineProperty(this, "boundDraw", {
+            enumerable: true,
+            configurable: true,
+            writable: true,
+            value: () => this.draw()
+        });
         this.canvas = options.canvas === undefined ? document.createElement("canvas") : options.canvas;
         this.skinCanvas = document.createElement("canvas");
         this.capeCanvas = document.createElement("canvas");
@@ -369,6 +405,7 @@ export class SkinViewer {
         this.renderer = new WebGLRenderer({
             canvas: this.canvas,
             preserveDrawingBuffer: options.preserveDrawingBuffer === true, // default: false
+            // antialias: false,
         });
         this.onDevicePixelRatioChange = () => {
             this.renderer.setPixelRatio(window.devicePixelRatio);
@@ -407,6 +444,9 @@ export class SkinViewer {
         this.playerObject.name = "player";
         this.playerObject.skin.visible = false;
         this.playerObject.cape.visible = false;
+        this.playerObject.elytra.visible = false;
+        this.playerObject.dragonWings.visible = false;
+        this.playerObject.ears.visible = false;
         this.playerWrapper = new Group();
         this.playerWrapper.add(this.playerObject);
         this.scene.add(this.playerWrapper);
@@ -428,8 +468,9 @@ export class SkinViewer {
         if (options.cape !== undefined) {
             this.loadCape(options.cape);
         }
-        if (options.wings !== undefined) {
-            this.loadWings(options.wings);
+        const dragonWingsSource = options.dragonWings ?? options.wings;
+        if (dragonWingsSource !== undefined) {
+            this.loadDragonWings(dragonWingsSource);
         }
         if (options.ears !== undefined && options.ears !== "current-skin") {
             this.loadEars(options.ears.source, {
@@ -461,7 +502,7 @@ export class SkinViewer {
             this.animationID = null;
         }
         else {
-            this.animationID = window.requestAnimationFrame(() => this.draw());
+            this.animationID = window.requestAnimationFrame(this.boundDraw);
         }
         this.onContextLost = (event) => {
             event.preventDefault();
@@ -473,37 +514,21 @@ export class SkinViewer {
         this.onContextRestored = () => {
             this.renderer.setClearColor(0, 0); // Clear color might be lost
             if (!this._renderPaused && !this._disposed && this.animationID === null) {
-                this.animationID = window.requestAnimationFrame(() => this.draw());
+                this.animationID = window.requestAnimationFrame(this.boundDraw);
             }
         };
         this.canvas.addEventListener("webglcontextlost", this.onContextLost, false);
         this.canvas.addEventListener("webglcontextrestored", this.onContextRestored, false);
-        this.canvas.addEventListener("mousedown", () => {
-            this.isUserRotating = true;
-        }, false);
-        this.canvas.addEventListener("mouseup", () => {
-            this.isUserRotating = false;
-        }, false);
-        this.canvas.addEventListener("touchmove", e => {
-            if (e.touches.length === 1) {
-                this.isUserRotating = true;
-            }
-            else {
-                this.isUserRotating = false;
-            }
-        }, false);
-        this.canvas.addEventListener("touchend", () => {
-            this.isUserRotating = false;
-        }, false);
+        if (!this.canvas.hasAttribute("tabindex")) {
+            this.canvas.tabIndex = 0;
+        }
         this.onKeyDown = (event) => {
-            // if (event.code === "ShiftLeft" || event.code === "Space") {
-            // 	console.log(`[SkinViewer] Key pressed: ${event.code}`);
-            // }
-            if (event.code === "Space" && this.animation) {
-                this.animation.playJump();
+            if (event.code === "Space") {
+                event.preventDefault();
+                this.doAction(animation => animation.playJump());
             }
-            if (event.code === "ShiftLeft" && this.animation) {
-                this.animation.playCrouch(true);
+            if (event.code === "ShiftLeft") {
+                this.doAction(animation => animation.playCrouch(true));
             }
         };
         this.onKeyUp = (event) => {
@@ -511,14 +536,50 @@ export class SkinViewer {
                 this.animation.playCrouch(false);
             }
         };
+        this.onBlur = () => {
+            this.animation?.playCrouch(false);
+        };
         this.onMouseDown = (event) => {
-            if (event.button === 0 && this.animation) {
-                this.animation.playSwing();
+            this.isUserRotating = true;
+            if (event.button === 0) {
+                this.doAction(animation => animation.playSwing());
             }
         };
-        window.addEventListener("keydown", this.onKeyDown, false);
-        window.addEventListener("keyup", this.onKeyUp, false);
-        this.canvas.addEventListener("mousedown", this.onMouseDown, false);
+        this.onMouseUp = () => {
+            this.isUserRotating = false;
+        };
+        this.onTouchMove = event => {
+            this.isUserRotating = event.touches.length === 1;
+        };
+        this.onTouchEnd = () => {
+            this.isUserRotating = false;
+        };
+        this.canvas.addEventListener("keydown", this.onKeyDown);
+        this.canvas.addEventListener("keyup", this.onKeyUp);
+        this.canvas.addEventListener("blur", this.onBlur);
+        this.canvas.addEventListener("mousedown", this.onMouseDown);
+        this.canvas.addEventListener("mouseup", this.onMouseUp);
+        this.canvas.addEventListener("touchmove", this.onTouchMove);
+        this.canvas.addEventListener("touchend", this.onTouchEnd);
+    }
+    doAction(fn) {
+        const current = this.animation;
+        if (!current)
+            return;
+        const next = current.interruptForAction() ?? current;
+        if (next !== current) {
+            this.animation = next;
+        }
+        fn(next);
+    }
+    interruptEmote() {
+        const current = this.animation;
+        if (!current)
+            return;
+        const next = current.interruptForAction();
+        if (next) {
+            this.animation = next;
+        }
     }
     updateComposerSize() {
         this.composer.setSize(this.width, this.height);
@@ -535,6 +596,7 @@ export class SkinViewer {
         this.skinTexture.magFilter = NearestFilter;
         this.skinTexture.minFilter = NearestFilter;
         this.playerObject.skin.map = this.skinTexture;
+        this.playerObject.bobjRig?.setBodyTexture(this.skinTexture);
     }
     recreateCapeTexture() {
         if (this.capeTexture !== null) {
@@ -555,7 +617,19 @@ export class SkinViewer {
         this.earsTexture.minFilter = NearestFilter;
         this.playerObject.ears.map = this.earsTexture;
     }
+    /**
+     * Shows only the selected cosmetic, hiding all others.
+     *
+     * When showing the cape, it can optionally be shown as an Elytra instead of a cape.
+     */
+    setCosmetic(cosmetic, options = {}) {
+        const showCape = cosmetic === "cape";
+        this.playerObject.cape.visible = showCape && options.elytra !== true;
+        this.playerObject.elytra.visible = showCape && options.elytra === true;
+        this.playerObject.dragonWings.visible = cosmetic === "dragonWings";
+    }
     loadSkin(source, options = {}) {
+        this.interruptEmote();
         if (source === null) {
             this.resetSkin();
         }
@@ -568,6 +642,7 @@ export class SkinViewer {
             else {
                 this.playerObject.skin.modelType = options.model;
             }
+            this.playerObject.syncBOBJModelType();
             if (options.makeVisible !== false) {
                 this.playerObject.skin.visible = true;
             }
@@ -588,14 +663,17 @@ export class SkinViewer {
         }
     }
     resetSkin() {
+        this.interruptEmote();
         this.playerObject.skin.visible = false;
         this.playerObject.skin.map = null;
+        this.playerObject.bobjRig?.setBodyTexture(null);
         if (this.skinTexture !== null) {
             this.skinTexture.dispose();
             this.skinTexture = null;
         }
     }
     loadCape(source, options = {}) {
+        this.interruptEmote();
         if (source === null) {
             this.resetCape();
         }
@@ -603,7 +681,8 @@ export class SkinViewer {
             loadCapeToCanvas(this.capeCanvas, source);
             this.recreateCapeTexture();
             if (options.makeVisible !== false) {
-                this.playerObject.backEquipment = options.backEquipment === undefined ? "cape" : options.backEquipment;
+                this.playerObject.cape.visible = options.elytra !== true;
+                this.playerObject.elytra.visible = options.elytra === true;
             }
         }
         else {
@@ -611,7 +690,9 @@ export class SkinViewer {
         }
     }
     resetCape() {
-        this.playerObject.backEquipment = null;
+        this.interruptEmote();
+        this.playerObject.cape.visible = false;
+        this.playerObject.elytra.visible = false;
         this.playerObject.cape.map = null;
         this.playerObject.elytra.map = null;
         if (this.capeTexture !== null) {
@@ -680,9 +761,10 @@ export class SkinViewer {
         this.wingsTexture.minFilter = NearestFilter;
         this.playerObject.wings.map = this.wingsTexture;
     }
-    loadWings(source, options = {}) {
+    loadDragonWings(source, options = {}) {
+        this.interruptEmote();
         if (source === null) {
-            this.resetWings();
+            this.resetDragonWings();
         }
         else if (isTextureSource(source)) {
             const ctx = this.wingsCanvas.getContext("2d");
@@ -694,20 +776,29 @@ export class SkinViewer {
             }
             this.recreateWingsTexture();
             if (options.makeVisible !== false) {
-                this.playerObject.backEquipment = options.backEquipment === undefined ? "wings" : options.backEquipment;
+                this.playerObject.dragonWings.visible = true;
             }
         }
         else {
-            return loadImage(source).then(image => this.loadWings(image, options));
+            return loadImage(source).then(image => this.loadDragonWings(image, options));
         }
     }
-    resetWings() {
-        this.playerObject.backEquipment = null;
-        this.playerObject.wings.map = null;
+    resetDragonWings() {
+        this.interruptEmote();
+        this.playerObject.dragonWings.visible = false;
+        this.playerObject.dragonWings.map = null;
         if (this.wingsTexture !== null) {
             this.wingsTexture.dispose();
             this.wingsTexture = null;
         }
+    }
+    loadWings(source, options = {}) {
+        // @ts-expect-error
+        return this.loadDragonWings(source, options);
+    }
+    /** @deprecated Use {@link resetDragonWings}. */
+    resetWings() {
+        this.resetDragonWings();
     }
     loadEars(source, options = {}) {
         if (source === null) {
@@ -765,6 +856,7 @@ export class SkinViewer {
                 const canvas = document.createElement("canvas");
                 canvas.width = size;
                 canvas.height = size;
+                // eslint-disable-next-line
                 const ctx = canvas.getContext("2d");
                 ctx.translate(size / 2, size / 2);
                 ctx.rotate((rotation * Math.PI) / 180);
@@ -805,19 +897,18 @@ export class SkinViewer {
             return loadImage(source).then(image => this.loadBackground(image, mapping));
         }
     }
-    // TODO
     loadShadowMesh() {
         if (!this.shadowMesh) {
-            const geometry = new CircleGeometry(8, 16);
+            const geometry = new CircleGeometry(6, 16);
             const material = new MeshBasicMaterial({
                 color: 0x000000,
                 transparent: true,
-                opacity: 0.2,
+                opacity: 0.35,
                 depthWrite: false,
-                side: BackSide, // won't be visible if the camera is below the player.
+                side: FrontSide,
             });
             this.shadowMesh = new Mesh(geometry, material);
-            this.shadowMesh.rotation.x = Math.PI / 2;
+            this.shadowMesh.rotation.x = -Math.PI / 2;
             this.shadowMesh.position.y = -16;
         }
         return this.shadowMesh;
@@ -866,10 +957,12 @@ export class SkinViewer {
      * ```
      */
     disableShadow() {
-        if (!this.shadowMesh)
+        if (!this._shadowEnabled)
             return;
-        this.scene.remove(this.shadowMesh);
         this._shadowEnabled = false;
+        if (this.shadowMesh) {
+            this.scene.remove(this.shadowMesh);
+        }
     }
     loadShadow(source) {
         if (source === null) {
@@ -884,12 +977,20 @@ export class SkinViewer {
                 ctx.drawImage(source, 0, 0);
             }
             this.recreateShadowTexture();
+            if (!this._shadowEnabled) {
+                this._shadowEnabled = true;
+                this.scene.add(this.loadShadowMesh());
+            }
         }
         else {
             return loadImage(source).then(image => this.loadShadow(image));
         }
     }
     resetShadow() {
+        if (this.shadowMesh) {
+            this.scene.remove(this.shadowMesh);
+        }
+        this._shadowEnabled = false;
         if (this.shadowTexture !== null) {
             this.shadowTexture.dispose();
             this.shadowTexture = null;
@@ -908,7 +1009,7 @@ export class SkinViewer {
             this._animation.update(this.playerObject, dt);
             if (this._nameTag) {
                 this._nameTag.position.y =
-                    this.playerObject.skin.head.getWorldPosition(new Vector3()).y + this.nameTagYOffset - 8;
+                    this.playerObject.skin.head.getWorldPosition(this.scratchVector3).y + this.nameTagYOffset - 8;
             }
         }
         if (this.autoRotate) {
@@ -919,7 +1020,49 @@ export class SkinViewer {
         this.updateCapeSway(dt);
         this.controls.update();
         this.render();
-        this.animationID = window.requestAnimationFrame(() => this.draw());
+        this.animationID = window.requestAnimationFrame(this.boundDraw);
+    }
+    /**
+     * Focuses the camera on a part of the player.
+     */
+    focus(target, zoom) {
+        let object;
+        if (target === "player") {
+            object = this.playerObject;
+        }
+        else if (target === "head") {
+            object = this.playerObject.skin.head;
+        }
+        else if (target === "cape") {
+            object = this.playerObject.cape;
+        }
+        else if (target === "elytra") {
+            object = this.playerObject.elytra;
+        }
+        else if (target === "dragonWings" || target === "wings") {
+            object = this.playerObject.dragonWings;
+        }
+        else if (target === "ears") {
+            object = this.playerObject.ears;
+        }
+        else {
+            object = target;
+        }
+        const position = object.getWorldPosition(this.scratchVector3);
+        if (target === "head") {
+            position.y = position.y + 4;
+        }
+        else if (target === "cape" || target === "elytra") {
+            position.y = position.y - 7;
+        }
+        else if (target === "dragonWings" || target === "wings") {
+            position.z = position.z - 4;
+        }
+        this.controls.target.copy(position);
+        if (zoom !== undefined) {
+            this.zoom = zoom;
+        }
+        this.controls.update();
     }
     /**
      * Renders the scene to the canvas.
@@ -939,10 +1082,19 @@ export class SkinViewer {
             return;
         }
         this._disposed = true;
+        if (this.animationID !== null) {
+            window.cancelAnimationFrame(this.animationID);
+            this.animationID = null;
+        }
         this.canvas.removeEventListener("webglcontextlost", this.onContextLost, false);
         this.canvas.removeEventListener("webglcontextrestored", this.onContextRestored, false);
-        window.removeEventListener("keydown", this.onKeyDown, false);
-        window.removeEventListener("keyup", this.onKeyUp, false);
+        this.canvas.removeEventListener("mousedown", this.onMouseDown);
+        this.canvas.removeEventListener("mouseup", this.onMouseUp);
+        this.canvas.removeEventListener("touchmove", this.onTouchMove);
+        this.canvas.removeEventListener("touchend", this.onTouchEnd);
+        this.canvas.removeEventListener("keydown", this.onKeyDown);
+        this.canvas.removeEventListener("keyup", this.onKeyUp);
+        this.canvas.removeEventListener("blur", this.onBlur);
         if (this.devicePixelRatioQuery !== null) {
             this.devicePixelRatioQuery.removeEventListener("change", this.onDevicePixelRatioChange);
             this.devicePixelRatioQuery = null;
@@ -952,13 +1104,15 @@ export class SkinViewer {
             this.animationID = null;
         }
         this.controls.dispose();
-        this.renderer.dispose();
         this.resetSkin();
         this.resetCape();
         this.resetEars();
+        this.resetDragonWings();
         this.resetShadow();
         this.background = null;
+        this.composer.dispose();
         this.fxaaPass.fsQuad?.dispose();
+        this.renderer.dispose();
     }
     get disposed() {
         return this._disposed;
@@ -982,7 +1136,7 @@ export class SkinViewer {
             !this._disposed &&
             !this.renderer.getContext().isContextLost() &&
             this.animationID == null) {
-            this.animationID = window.requestAnimationFrame(() => this.draw());
+            this.animationID = window.requestAnimationFrame(this.boundDraw);
         }
     }
     get width() {
@@ -1075,17 +1229,19 @@ export class SkinViewer {
         return this._animation;
     }
     set animation(animation) {
-        if (this._animation !== animation) {
-            this.playerObject.resetJoints();
-            this.playerObject.position.set(0, 0, 0);
-            this.playerObject.rotation.set(0, 0, 0);
-            if (this._nameTag) {
-                this._nameTag.position.y = this.nameTagYOffset;
-            }
-            this.clock.reset();
+        if (this._animation === animation) {
+            return;
         }
+        this._animation?.reset();
+        this.playerObject.resetJoints();
+        this.playerObject.position.set(0, 0, 0);
+        this.playerObject.rotation.set(0, 0, 0);
+        if (this._nameTag) {
+            this._nameTag.position.y = this.nameTagYOffset;
+        }
+        this.clock.reset();
         if (animation !== null) {
-            animation.progress = 0;
+            animation.reset();
         }
         this._animation = animation;
     }

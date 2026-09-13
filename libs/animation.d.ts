@@ -86,22 +86,16 @@ export declare abstract class PlayerAnimation {
     private _swingActive;
     private _swingTime;
     private readonly _swingDuration;
-    private _swingCooldown;
     private _jumpActive;
     private _jumpTime;
     private readonly _jumpDuration;
     private readonly _jumpHeight;
-    private _jumpCooldown;
     private _crouchActive;
-    private _crouchWasActive;
     private readonly _states;
+    private _statesSnapshot;
     private _nextId;
-    private _addons;
+    private readonly _addons;
     constructor();
-    /**
-     * Mark a modifier state as active or inactive,
-     * keeping the internal state set consistent.
-     */
     private setState;
     /**
      * Which modifier states are currently active.
@@ -125,6 +119,10 @@ export declare abstract class PlayerAnimation {
      * ```
      */
     addAnimation(fn: (player: PlayerObject, progress: number, id: number) => void): number;
+    /**
+     * Removes all custom animations added through {@link addAnimation}.
+     */
+    clearAnimations(): void;
     /**
      * Removes an animation created by the addAnimation method by its id.
      *
@@ -159,54 +157,21 @@ export declare abstract class PlayerAnimation {
      * @param deltaTime - time elapsed since last call
      */
     update(player: PlayerObject, deltaTime: number): void;
-    /**
-     * Animate the dragon wings using the client's math.
-     * @param player - The player object.
-     * @param wingPosition - The animation position/time.
-     */
-    protected animateWings(player: PlayerObject, wingPosition: number): void;
-    /**
-     * Animate a player jump.
-     */
+    protected animateWings(player: PlayerObject): void;
+    get isIdle(): boolean;
     playJump(): void;
-    /**
-     * Whether a jump animation is currently playing.
-     */
     get isJumping(): boolean;
-    /**
-     * Animates a single jump.
-     * @param player - The player object.
-     * @param delta - Scaled time elapsed since last call.
-     */
     animateJump(player: PlayerObject, delta: number): void;
-    /**
-     * Animate a player swing.
-     */
     playSwing(): void;
-    /**
-     * Whether a swing animation is currently playing.
-     */
     get isSwinging(): boolean;
-    /**
-     * Animates a single swing.
-     * @param player - The player object.
-     * @param delta - Scaled time elapsed since last call.
-     */
     animateSwing(player: PlayerObject, delta: number): void;
-    /**
-     * Animate a player crouch.
-     * @param crouch - The player crouch state.
-     */
     playCrouch(crouch?: boolean): void;
-    /** Whether a crouch animation is currently playing. */
     get isCrouching(): boolean;
-    /**
-     * Animates a crouch.
-     * @param player - The player object.
-     * @param _delta - Scaled time elapsed since last call.
-     */
-    animateCrouch(player: PlayerObject, _delta: number): void;
+    animateCrouch(player: PlayerObject): void;
     getState(): AnimationState;
+    interruptForAction(): PlayerAnimation | null;
+    stop(): void;
+    reset(): void;
 }
 /**
  * Wraps a plain function as a {@link PlayerAnimation}.
@@ -240,14 +205,8 @@ export declare class SitAnimation extends PlayerAnimation {
 }
 export declare class SwimAnimation extends PlayerAnimation {
     protected get supportedActions(): Readonly<AnimationActions>;
-    protected animate(player: PlayerObject): void;
-}
-export declare class WardrobeIdleAnimation extends PlayerAnimation {
-    protected get supportedActions(): Readonly<AnimationActions>;
-    protected animate(player: PlayerObject): void;
-}
-export declare class WardrobeIdle2Animation extends PlayerAnimation {
-    protected get supportedActions(): Readonly<AnimationActions>;
+    private readonly _leftArmEuler;
+    private readonly _rightArmEuler;
     protected animate(player: PlayerObject): void;
 }
 export {};
