@@ -837,7 +837,7 @@ export class PlayerObject extends Group {
 		this.dragonWings.visible = value;
 	}
 
-	/** @deprecated */
+	/** @deprecated Use {@link cosmetics} */
 	get backEquipment(): BackEquipment | null {
 		if (this.cape.visible) {
 			return "cape";
@@ -850,7 +850,7 @@ export class PlayerObject extends Group {
 		}
 	}
 
-	/** @deprecated */
+	/** @deprecated Use {@link cosmetics} */
 	set backEquipment(value: BackEquipment | null) {
 		this.cape.visible = value === "cape";
 		this.elytra.visible = value === "elytra";

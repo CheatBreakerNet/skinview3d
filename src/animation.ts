@@ -1,7 +1,7 @@
 import { PlayerObject } from "./model.js";
 import { easeInOutSine, easingArc, clamp01, sampleEulerKeyframes } from "./math.js";
 import { swimLeftArm, swimRightArm } from "./keyframes.js";
-import { SIXTEEN} from './consts.js'
+import { SIXTEEN } from "./consts.js";
 
 export type PlayerState = "Idle" | "Swinging" | "Jumping" | "Crouching";
 

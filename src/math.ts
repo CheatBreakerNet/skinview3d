@@ -102,8 +102,8 @@ export function clamp01(value: number): number {
 
 /**
  * Linearly interpolates between 2 values
- * t = 0 -> a
- * t = 1 -> b
+ * t = 0 → a
+ * t = 1 → b
  */
 export function lerp(a: number, b: number, t: number): number {
 	return a + (b - a) * t;
@@ -221,7 +221,7 @@ export type EasingName = keyof typeof Easings;
 
 /**
  * Produces a symmetric arc using an easing function
- * 0 -> height -> 0
+ * 0 → height → 0
  */
 export function easingArc(t: number, height = 1, easing: EasingFn = easeInOutSine): number {
 	t = clamp01(t);
