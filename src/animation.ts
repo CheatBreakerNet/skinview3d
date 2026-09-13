@@ -1,7 +1,7 @@
 import { PlayerObject } from "./model.js";
 import { easeInOutSine, easingArc, clamp01, sampleEulerKeyframes } from "./math.js";
 import { swimLeftArm, swimRightArm } from "./keyframes.js";
-import type { Object3D } from "three";
+import { SIXTEEN} from './consts.js'
 
 export type PlayerState = "Idle" | "Swinging" | "Jumping" | "Crouching";
 
@@ -60,8 +60,6 @@ const ArmZIdle = Math.PI * 0.02;
 const ArmXIdle = Math.PI * 0.01;
 const ArmZSwing = 0.01 * Math.PI + 0.06;
 
-const wingTipCache = new WeakMap<PlayerObject, Object3D>();
-
 /**
  * An animation which can be played on a {@link PlayerObject}.
  *
@@ -118,21 +116,18 @@ export abstract class PlayerAnimation {
 	// Swings
 	private _swingActive: boolean = false;
 	private _swingTime: number = 0;
-	private readonly _swingDuration: number = 0.3;
+	private readonly _swingDuration: number = 0.28;
 
 	// Jump
 	private _jumpActive: boolean = false;
 	private _jumpTime: number = 0;
-	private readonly _jumpDuration: number = 0.6;
-	private readonly _jumpHeight: number = 10;
+	private readonly _jumpDuration: number = 0.7;
+	private readonly _jumpHeight: number = SIXTEEN;
 
 	// Crouch
 	private _crouchActive = false;
 
-	// The set of modifer states that are currently active, kept in sync
-	// incrementally by setState() instead of being recomputed on every read.
 	private readonly _states: Set<PlayerState> = new Set(["Idle"]);
-	// Cached readonly snapshot of `_states`
 	private _statesSnapshot: Set<PlayerState> | null = null;
 
 	private _nextId: number = 0;
@@ -148,10 +143,6 @@ export abstract class PlayerAnimation {
 		this._activeAnimation = this.constructor.name;
 	}
 
-	/**
-	 * Mark a modifier state as active or inactive,
-	 * keeping the internal state set consistent.
-	 */
 	private setState(state: Exclude<PlayerState, "Idle">, active: boolean): void {
 		if (active) {
 			this._states.delete("Idle");
@@ -257,6 +248,8 @@ export abstract class PlayerAnimation {
 		const delta = deltaTime * this.speed;
 		const bones = player.skin.bones;
 
+		player.cosmeticTimer += delta;
+
 		for (const bone of bones) {
 			bone.resetOrigin();
 			bone.resetOffset();
@@ -278,35 +271,21 @@ export abstract class PlayerAnimation {
 		this.progress += delta;
 	}
 
-	/**
-	 * Animate the dragon wings using the client's math.
-	 * @param player - The player object.
-	 * @param wingPosition - The animation position/time.
-	 */
-	protected animateWings(player: PlayerObject, wingPosition: number): void {
-		player.wings.leftWing.rotation.x = -0.125 - Math.cos(wingPosition) * 0.2;
-		player.wings.leftWing.rotation.y = -0.75;
-		player.wings.leftWing.rotation.z = -((Math.sin(wingPosition) + 0.125) * 0.8);
+	protected animateWings(player: PlayerObject): void {
+		const wingPosition = player.cosmeticTimer * Math.PI;
 
-		let leftWingTip = wingTipCache.get(player);
-		if (!leftWingTip) {
-			leftWingTip = player.wings.leftWing.getObjectByName("wingTip");
-			if (leftWingTip) wingTipCache.set(player, leftWingTip);
-		}
-		if (leftWingTip) {
-			leftWingTip.rotation.z = -((Math.sin(wingPosition + 2.0) + 0.5) * 0.75);
-		}
+		player.dragonWings.leftWing.rotation.x = -0.125 - Math.cos(wingPosition) * 0.2;
+		player.dragonWings.leftWing.rotation.y = -0.75;
+		player.dragonWings.leftWing.rotation.z = -((Math.sin(wingPosition) + 0.125) * 0.8);
+		player.dragonWings.leftWingTip.rotation.z = -((Math.sin(wingPosition + 2.0) + 0.5) * 0.75);
 
-		player.wings.updateRightWing();
+		player.dragonWings.updateRightWing();
 	}
 
 	get isIdle(): boolean {
 		return this._states.has("Idle");
 	}
 
-	/**
-	 * Animate a player jump.
-	 */
 	playJump(): void {
 		if (!this.allowedActions.jump) return;
 		if (!this.supportedActions.jump) return;
@@ -318,18 +297,10 @@ export abstract class PlayerAnimation {
 		this.setState("Jumping", true);
 	}
 
-	/**
-	 * Whether a jump animation is currently playing.
-	 */
 	get isJumping(): boolean {
 		return this._jumpActive;
 	}
 
-	/**
-	 * Animates a single jump.
-	 * @param player - The player object.
-	 * @param delta - Scaled time elapsed since last call.
-	 */
 	animateJump(player: PlayerObject, delta: number): void {
 		if (!this._jumpActive) return;
 
@@ -348,9 +319,6 @@ export abstract class PlayerAnimation {
 		}
 	}
 
-	/**
-	 * Animate a player swing.
-	 */
 	playSwing(): void {
 		if (!this.allowedActions.swing) return;
 		if (!this.supportedActions.swing) return;
@@ -362,18 +330,10 @@ export abstract class PlayerAnimation {
 		this.setState("Swinging", true);
 	}
 
-	/**
-	 * Whether a swing animation is currently playing.
-	 */
 	get isSwinging(): boolean {
 		return this._swingActive;
 	}
 
-	/**
-	 * Animates a single swing.
-	 * @param player - The player object.
-	 * @param delta - Scaled time elapsed since last call.
-	 */
 	animateSwing(player: PlayerObject, delta: number): void {
 		if (!this._swingActive) return;
 
@@ -384,15 +344,12 @@ export abstract class PlayerAnimation {
 		const t = this._swingTime * 16;
 		const envelope = Math.sin(progress * Math.PI);
 
-		// Body
 		player.skin.body.offsetRotation.y += -Math.cos(t) * 0.2 * envelope;
 
-		// Right arm
 		player.skin.rightArm.offsetRotation.x = (-0.9 + 0.6 * Math.sin(t + Math.PI)) * envelope;
 
 		player.skin.rightArm.offsetRotation.z = (-Math.cos(t) * 0.4 + ArmZSwing) * envelope;
 
-		// Left arm
 		player.skin.leftArm.offsetRotation.x += Math.sin(t + Math.PI) * 0.077 * envelope;
 
 		player.skin.leftArm.offsetPosition.z += Math.cos(t) * 0.6 * envelope;
@@ -407,10 +364,6 @@ export abstract class PlayerAnimation {
 		}
 	}
 
-	/**
-	 * Animate a player crouch.
-	 * @param crouch - The player crouch state.
-	 */
 	playCrouch(crouch: boolean = !this._crouchActive): void {
 		if (!this.allowedActions.crouch) return;
 		if (!this.supportedActions.crouch) return;
@@ -421,16 +374,10 @@ export abstract class PlayerAnimation {
 		this.setState("Crouching", crouch);
 	}
 
-	/** Whether a crouch animation is currently playing. */
 	get isCrouching(): boolean {
 		return this._crouchActive;
 	}
 
-	/**
-	 * Animates a crouch.
-	 * @param player - The player object.
-	 * @param _delta - Scaled time elapsed since last call.
-	 */
 	animateCrouch(player: PlayerObject): void {
 		if (!this._crouchActive) return;
 
@@ -440,29 +387,24 @@ export abstract class PlayerAnimation {
 
 		player.skin.head.offsetPosition.y -= 3.62;
 
-		// Legs
 		player.skin.leftLeg.offsetPosition.z -= 3.45;
 		player.skin.rightLeg.offsetPosition.z -= 3.45;
 
-		// Arms
 		player.skin.leftArm.offsetRotation.x += Math.PI - 3.2;
 		player.skin.rightArm.offsetRotation.x += Math.PI - 3.2;
 
-		// Cape
 		player.cape.rotation.x = CapeAngle;
 		player.cape.position.z = -2;
 
-		// Elytra
 		player.elytra.position.copy(player.cape.position);
 		player.elytra.rotation.x = player.cape.rotation.x - CapeAngle;
 		player.elytra.leftWing.rotation.z = 0.72;
 		player.elytra.leftWing.rotation.y = 0.3;
 		player.elytra.updateRightWing();
 
-		// Dragon wings
-		player.wings.position.y = 5;
-		player.wings.position.z = -2;
-		player.wings.rotation.x = 0.2617994 - player.skin.body.offsetRotation.x;
+		player.dragonWings.position.y = 5;
+		player.dragonWings.position.z = -2;
+		player.dragonWings.rotation.x = 0.2617994 - player.skin.body.offsetRotation.x;
 	}
 
 	getState(): AnimationState {
@@ -472,16 +414,10 @@ export abstract class PlayerAnimation {
 		};
 	}
 
-	/**
-	 * Interrupts the animation if an action is triggered.
-	 */
 	interruptForAction(): PlayerAnimation | null {
 		return null;
 	}
 
-	/**
-	 * Stops all currently active animation states.
-	 */
 	stop(): void {
 		this._swingActive = false;
 		this._swingTime = 0;
@@ -496,9 +432,6 @@ export abstract class PlayerAnimation {
 		this.setState("Crouching", false);
 	}
 
-	/**
-	 * Resets the animation to its initial state.
-	 */
 	reset(): void {
 		this.stop();
 
@@ -535,7 +468,6 @@ export class IdleAnimation extends PlayerAnimation {
 		const t = this.progress * 2;
 		const sin = Math.sin(t);
 
-		// Arms
 		player.skin.leftArm.originRotation.x = crouchOffset;
 		player.skin.rightArm.originRotation.x = crouchOffset;
 
@@ -547,8 +479,7 @@ export class IdleAnimation extends PlayerAnimation {
 
 		player.cape.rotation.x = CapeAngle;
 
-		// Wings
-		this.animateWings(player, this.progress * Math.PI);
+		this.animateWings(player);
 	}
 }
 
@@ -569,11 +500,9 @@ export class WalkAnimation extends PlayerAnimation {
 
 		const sin = Math.sin(t);
 
-		// Legs
 		player.skin.leftLeg.originRotation.x = sin * 0.5 * crouchMultiplier;
 		player.skin.rightLeg.originRotation.x = Math.sin(t + Math.PI) * 0.5 * crouchMultiplier;
 
-		// Arms
 		player.skin.leftArm.originRotation.x = Math.sin(t + Math.PI) * 0.5;
 		player.skin.rightArm.originRotation.x = sin * 0.5;
 
@@ -583,8 +512,7 @@ export class WalkAnimation extends PlayerAnimation {
 
 		player.cape.rotation.x = Math.PI / 4 + sin / 16;
 
-		// Wings
-		this.animateWings(player, this.progress * Math.PI);
+		this.animateWings(player);
 	}
 }
 
@@ -604,15 +532,12 @@ export class FlyAnimation extends PlayerAnimation {
 		player.rotation.x = Math.PI / 2;
 		player.skin.head.originRotation.x = -Math.PI / 4;
 
-		// Arms
 		player.skin.leftArm.originRotation.x = -sin / 4;
 		player.skin.rightArm.originRotation.x = sin / 4;
 
-		// Legs
 		player.skin.leftLeg.originRotation.x = sin / 4;
 		player.skin.rightLeg.originRotation.x = -sin / 4;
 
-		// Elytra
 		const elytraX = 0.35;
 		const elytraZ = Math.PI / 2;
 
@@ -620,7 +545,7 @@ export class FlyAnimation extends PlayerAnimation {
 		player.elytra.leftWing.rotation.z = elytraZ;
 		player.elytra.updateRightWing();
 
-		this.animateWings(player, this.progress * Math.PI);
+		this.animateWings(player);
 	}
 }
 
@@ -655,7 +580,7 @@ export class SitAnimation extends PlayerAnimation {
 		player.skin.leftArm.originRotation.x = sin * 0.03 + armX - 0.6;
 		player.skin.rightArm.originRotation.x = -sin * 0.03 - armX - 0.6;
 
-		this.animateWings(player, this.progress * Math.PI);
+		this.animateWings(player);
 	}
 }
 
@@ -683,7 +608,6 @@ export class SwimAnimation extends PlayerAnimation {
 
 		player.cape.rotation.x = Math.PI / 4;
 
-		// Arms
 		const leftArm = sampleEulerKeyframes(swimLeftArm, phase, this._leftArmEuler);
 		const rightArm = sampleEulerKeyframes(swimRightArm, phase, this._rightArmEuler);
 
@@ -695,11 +619,9 @@ export class SwimAnimation extends PlayerAnimation {
 		player.skin.rightArm.originRotation.y = rightArm.y;
 		player.skin.rightArm.originRotation.z = rightArm.z;
 
-		// Legs
 		player.skin.leftLeg.originRotation.x = sin / 4;
 		player.skin.rightLeg.originRotation.x = -sin / 4;
 
-		// Wings
-		this.animateWings(player, this.progress * Math.PI);
+		this.animateWings(player);
 	}
 }

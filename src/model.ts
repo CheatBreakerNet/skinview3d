@@ -95,19 +95,6 @@ function setCapeUVs(box: BoxGeometry, u: number, v: number, width: number, heigh
 	setBoxUVs(box, u, v, width, height, depth, 64, 32);
 }
 
-/**
- * A Bone is any node that should support layered, animatable position/rotation. Without
- * being limited to the player's actual skeletal joints.
- *
- * Every bone has three layers of transform that are composed together each frame via {@link commit}:
- * - `base*`    - the rest-pose offset from the parent. Set once, never touched by animations.
- * - `origin*`  - written by the currently active "pose" animation
- * - `offset*`  - written by transient modifier states (basically swinging and jumping)
- *
- * Notice: because `commit()` recomputes the underlying position/rotation/quaternion from the
- * layers above, those properties are effectively read-only outputs on a bone - anything written above it
- * will be overwritten next time `commit()` runs.
- */
 export class Bone extends Group {
 	readonly basePosition: Vector3 = new Vector3();
 	readonly baseRotation: Euler = new Euler();
@@ -120,9 +107,6 @@ export class Bone extends Group {
 
 	private originQuaternionValue: Quaternion | null = null;
 
-	// Reused across every Bone's commit() call to avoid a per-frame, per-bone
-	// allocation. This is safe as long as commit() finishes using them before
-	// returning (it does, and commit() never re-enters itself)
 	private static readonly tempQuatA = new Quaternion();
 	private static readonly tempQuatB = new Quaternion();
 
@@ -142,7 +126,6 @@ export class Bone extends Group {
 		this.offsetPosition.set(x, y, z);
 	}
 
-	// used by poses that are expressed as quaternions (like swimming)
 	setOriginQuaternion(q: Quaternion): void {
 		if (this.originQuaternionValue === null) {
 			this.originQuaternionValue = new Quaternion();
@@ -151,34 +134,22 @@ export class Bone extends Group {
 		this.originQuaternionValue.copy(q);
 	}
 
-	/**
-	 * Resets the rest-pose (base) position and rotation of this bone.
-	 */
 	resetBase(): void {
 		this.basePosition.set(0, 0, 0);
 		this.baseRotation.set(0, 0, 0);
 	}
 
-	/**
-	 * Resets the origin position and rotation of this bone.
-	 */
 	resetOrigin(): void {
 		this.originPosition.set(0, 0, 0);
 		this.originRotation.set(0, 0, 0);
 		this.originQuaternionValue = null;
 	}
 
-	/**
-	 * Resets the offset position and rotation of this bone.
-	 */
 	resetOffset(): void {
 		this.offsetPosition.set(0, 0, 0);
 		this.offsetRotation.set(0, 0, 0);
 	}
 
-	/**
-	 * Resets base + origin + offset all at once, and commits the result.
-	 */
 	resetAll(): void {
 		this.resetBase();
 		this.resetOrigin();
@@ -186,10 +157,6 @@ export class Bone extends Group {
 		this.commit();
 	}
 
-	/**
-	 * Composes a base + origin + offset into the actual position and rotation of this bone.
-	 * This is the only place that writes to the underlying position/rotation/quaternion properties.
-	 */
 	commit(): void {
 		this.position.set(
 			this.basePosition.x + this.originPosition.x + this.offsetPosition.x,
@@ -200,8 +167,6 @@ export class Bone extends Group {
 		const hasBaseRotation = this.baseRotation.x !== 0 || this.baseRotation.y !== 0 || this.baseRotation.z !== 0;
 
 		if (this.originQuaternionValue !== null) {
-			// origin is expressed as a quaternion (like swimming) offset is
-			// still an Euler delta layered on top of it.
 			Bone.tempQuatA.setFromEuler(this.offsetRotation);
 			Bone.tempQuatB.copy(this.originQuaternionValue).multiply(Bone.tempQuatA);
 
@@ -221,12 +186,6 @@ export class Bone extends Group {
 	}
 }
 
-/**
- * Recursively commits every {@link Bone} in the given subtree (including the
- * root itself, if it is a Bone). Call order doesn't matter: each bone's
- * commit() only depends on its own base/origin/offset values, never on its
- * parent's committed transform.
- */
 export function commitBones(root: Object3D): void {
 	root.traverse(obj => {
 		if (obj instanceof Bone) {
@@ -235,9 +194,6 @@ export function commitBones(root: Object3D): void {
 	});
 }
 
-/**
- * Notice that innerLayer and outerLayer may NOT be the direct children of the Group.
- */
 export class BodyPart extends Bone {
 	constructor(
 		readonly innerLayer: Object3D,
@@ -250,7 +206,6 @@ export class BodyPart extends Bone {
 }
 
 export class SkinObject extends Bone {
-	// body parts
 	readonly head: BodyPart;
 	readonly body: BodyPart;
 	readonly rightArm: BodyPart;
@@ -258,7 +213,7 @@ export class SkinObject extends Bone {
 	readonly rightLeg: BodyPart;
 	readonly leftLeg: BodyPart;
 
-	private modelListeners: Array<() => void> = []; // called when model(slim property) is changed
+	private modelListeners: Array<() => void> = [];
 	private slim = false;
 
 	private _map: Texture | null = null;
@@ -289,7 +244,6 @@ export class SkinObject extends Bone {
 		this.layer2MaterialBiased.polygonOffsetFactor = 1.0;
 		this.layer2MaterialBiased.polygonOffsetUnits = 1.0;
 
-		// Head
 		const headBox = new BoxGeometry(8, 8, 8);
 		setSkinUVs(headBox, 0, 0, 8, 8, 8);
 		const headMesh = new Mesh(headBox, this.layer1Material);
@@ -306,7 +260,6 @@ export class SkinObject extends Bone {
 		this.head.setBasePosition(0, 0, 0);
 		this.add(this.head);
 
-		// Body
 		const bodyBox = new BoxGeometry(8, 12, 4);
 		setSkinUVs(bodyBox, 16, 16, 8, 12, 4);
 		const bodyMesh = new Mesh(bodyBox, this.layer1Material);
@@ -321,7 +274,6 @@ export class SkinObject extends Bone {
 		this.body.setBasePosition(0, -6, 0);
 		this.add(this.body);
 
-		// Right Arm
 		const rightArmBox = new BoxGeometry();
 		const rightArmMesh = new Mesh(rightArmBox, this.layer1MaterialBiased);
 		this.modelListeners.push(() => {
@@ -353,7 +305,6 @@ export class SkinObject extends Bone {
 		this.rightArm.setBasePosition(-5, 4, 0);
 		this.body.add(this.rightArm);
 
-		// Left Arm
 		const leftArmBox = new BoxGeometry();
 		const leftArmMesh = new Mesh(leftArmBox, this.layer1MaterialBiased);
 		this.modelListeners.push(() => {
@@ -385,7 +336,6 @@ export class SkinObject extends Bone {
 		this.leftArm.setBasePosition(5, 4, 0);
 		this.body.add(this.leftArm);
 
-		// Right Leg
 		const rightLegBox = new BoxGeometry(4, 12, 4);
 		setSkinUVs(rightLegBox, 0, 16, 4, 12, 4);
 		const rightLegMesh = new Mesh(rightLegBox, this.layer1MaterialBiased);
@@ -404,7 +354,6 @@ export class SkinObject extends Bone {
 		this.rightLeg.setBasePosition(-1.9, -12, -0.1);
 		this.add(this.rightLeg);
 
-		// Left Leg
 		const leftLegBox = new BoxGeometry(4, 12, 4);
 		setSkinUVs(leftLegBox, 16, 48, 4, 12, 4);
 		const leftLegMesh = new Mesh(leftLegBox, this.layer1MaterialBiased);
@@ -461,7 +410,6 @@ export class SkinObject extends Bone {
 		return this.children.filter(it => it instanceof BodyPart) as Array<BodyPart>;
 	}
 
-	// all bones in order
 	get bones(): Bone[] {
 		return [this.head, this.body, this.rightArm, this.leftArm, this.rightLeg, this.leftLeg];
 	}
@@ -506,8 +454,6 @@ export class CapeObject extends Bone {
 			alphaTest: 1e-5,
 		});
 
-		// +z (front) - inside of cape
-		// -z (back) - outside of cape
 		const capeBox = new BoxGeometry(10, 16, 1);
 		setCapeUVs(capeBox, 0, 0, 10, 16, 1);
 		this.cape = new Mesh(capeBox, this.material);
@@ -568,15 +514,11 @@ export class ElytraObject extends Bone {
 	}
 
 	resetJoints(): void {
-		this.leftWing.rotation.y = 0.01; // to avoid z-fighting
+		this.leftWing.rotation.y = 0.01;
 		this.leftWing.rotation.z = 0.2617994;
 		this.updateRightWing();
 	}
 
-	/**
-	 * Mirrors the position & rotation of left wing,
-	 * and apply them to the right wing.
-	 */
 	updateRightWing(): void {
 		this.rightWing.position.x = -this.leftWing.position.x;
 		this.rightWing.position.y = this.leftWing.position.y;
@@ -598,6 +540,8 @@ export class ElytraObject extends Bone {
 export class DragonWingsObject extends Bone {
 	readonly leftWing: Group;
 	readonly rightWing: Group;
+	readonly leftWingTip: Object3D;
+	readonly rightWingTip: Object3D;
 
 	private material: MeshBasicMaterial;
 
@@ -610,8 +554,13 @@ export class DragonWingsObject extends Bone {
 			alphaTest: 0.1,
 		});
 
-		this.leftWing = this.createWing();
-		this.rightWing = this.createWing();
+		const left = this.createWing();
+		const right = this.createWing();
+
+		this.leftWing = left.group;
+		this.rightWing = right.group;
+		this.leftWingTip = left.tip;
+		this.rightWingTip = right.tip;
 		this.rightWing.scale.x = -1;
 
 		this.add(this.leftWing);
@@ -623,7 +572,7 @@ export class DragonWingsObject extends Bone {
 		this.resetJoints();
 	}
 
-	private createWing(): Group {
+	private createWing(): { group: Group; tip: Object3D } {
 		const wingGroup = new Group();
 		wingGroup.rotation.order = "ZYX";
 
@@ -660,7 +609,7 @@ export class DragonWingsObject extends Bone {
 		wingGroup.add(wingTipGroup);
 
 		wingGroup.position.set(-12, -5, -2);
-		return wingGroup;
+		return { group: wingGroup, tip: wingTipGroup };
 	}
 
 	resetJoints(): void {
@@ -676,13 +625,7 @@ export class DragonWingsObject extends Bone {
 		this.rightWing.rotation.x = this.leftWing.rotation.x;
 		this.rightWing.rotation.y = -this.leftWing.rotation.y;
 		this.rightWing.rotation.z = -this.leftWing.rotation.z;
-
-		const leftWingTip = this.leftWing.getObjectByName("wingTip");
-		const rightWingTip = this.rightWing.getObjectByName("wingTip");
-
-		if (leftWingTip && rightWingTip) {
-			rightWingTip.rotation.z = leftWingTip.rotation.z;
-		}
+		this.rightWingTip.rotation.z = this.leftWingTip.rotation.z;
 	}
 
 	get map(): Texture | null {
@@ -732,10 +675,11 @@ export class EarsObject extends Bone {
 }
 
 export type Cosmetic = "cape" | "dragonWings";
-/** @deprecated Use {@link Cosmetic} */
 export type BackEquipment = "cape" | "elytra" | "wings";
 
 export class PlayerObject extends Group {
+	cosmeticTimer: number = 0;
+
 	readonly skin: SkinObject;
 	readonly cape: CapeObject;
 	readonly elytra: ElytraObject;

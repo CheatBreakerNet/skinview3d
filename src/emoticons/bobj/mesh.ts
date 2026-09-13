@@ -78,15 +78,27 @@ function parseFaceCorner(value: string): BOBJFaceCorner {
 	return { position, texCoord, normal };
 }
 
+interface MutableMeshDef {
+	name: string;
+	armatureName: string | null;
+	faces: BOBJFace[];
+}
+
+interface MutableArmatureDef {
+	name: string;
+	bones: BOBJBoneDef[];
+	bonesByName: Map<string, BOBJBoneDef>;
+}
+
 export function parseMesh(data: string): BOBJMeshFile {
 	const vertices: BOBJVertex[] = [];
 	const uvs: (readonly [number, number])[] = [];
 	const normals: (readonly [number, number, number])[] = [];
-	const meshes = new Map<string, BOBJMeshFile>();
-	const armatures = new Map<string, { name: string; bones: BOBJBoneDef[]; bonesByName: Map<string, BOBJBoneDef> }>();
+	const meshes = new Map<string, MutableMeshDef>();
+	const armatures = new Map<string, MutableArmatureDef>();
 
-	let mesh: BOBJMeshDef | null = null;
-	let armature: { name: string; bones: BOBJBoneDef[]; bonesByName: Map<string, BOBJBoneDef> } | null = null;
+	let mesh: MutableMeshDef | null = null;
+	let armature: MutableArmatureDef | null = null;
 	let pendingWeights: BOBJWeight[] = [];
 	let boneIndex = 0;
 
@@ -115,13 +127,12 @@ export function parseMesh(data: string): BOBJMeshFile {
 			flushVertex();
 
 			mesh = { name: values[1], armatureName: null, faces: [] };
-			// @ts-expect-error
 			meshes.set(mesh.name, mesh);
 
 			armature = null;
 		} else if (tag === "o_arm") {
 			if (mesh) {
-				(mesh as { armatureName: string | null }).armatureName = values[1];
+				mesh.armatureName = values[1];
 			}
 		} else if (tag === "v") {
 			flushVertex();
@@ -152,8 +163,6 @@ export function parseMesh(data: string): BOBJMeshFile {
 
 			armature = { name: values[1], bones: [], bonesByName: new Map() };
 			armatures.set(armature.name, armature);
-		} else if (tag === "arm_action") {
-			// balls
 		} else if (tag === "arm_bone") {
 			if (!armature) continue;
 
@@ -186,14 +195,11 @@ export function parseMesh(data: string): BOBJMeshFile {
 
 			armature.bones.push(bone);
 			armature.bonesByName.set(name, bone);
-		} else if (tag === "arm_ik") {
-			// balls
 		}
 	}
 
 	flushVertex();
 
-	// @ts-expect-error TODO
 	return { vertices, uvs, normals, meshes, armatures };
 }
 
