@@ -1,5 +1,5 @@
 import { PlayerObject } from "./model.js";
-import { easeInOutSine, easingArc, clamp01, lerp, sampleEulerKeyframes } from "./math.js";
+import { easeInOutSine, easingArc, clamp01, sampleEulerKeyframes } from "./math.js";
 import { swimLeftArm, swimRightArm } from "./keyframes.js";
 import type { Object3D } from "three";
 
