@@ -7,15 +7,17 @@ import {
 	FrontSide,
 	Group,
 	Mesh,
-	MeshStandardMaterial,
+	MeshBasicMaterial,
 	Object3D,
+	PlaneGeometry,
 	Quaternion,
 	Texture,
 	Vector2,
 	Vector3,
 } from "three";
+import type { EmoteBOBJRig } from "./skinview3d.js";
 
-function setUVs(
+function setBoxUVs(
 	box: BoxGeometry,
 	u: number,
 	v: number,
@@ -61,27 +63,38 @@ function setUVs(
 	uvAttr.needsUpdate = true;
 }
 
+function setPlaneUVs(
+	plane: PlaneGeometry,
+	u: number,
+	v: number,
+	width: number,
+	height: number,
+	textureWidth: number,
+	textureHeight: number
+): void {
+	const uv = plane.attributes.uv as BufferAttribute;
+
+	const u0 = u / textureWidth;
+	const u1 = (u + width) / textureWidth;
+	const v0 = 1 - (v + height) / textureHeight;
+	const v1 = 1 - v / textureHeight;
+
+	uv.setXY(0, u0, v0);
+	uv.setXY(1, u1, v0);
+	uv.setXY(2, u0, v1);
+	uv.setXY(3, u1, v1);
+
+	uv.needsUpdate = true;
+}
+
 function setSkinUVs(box: BoxGeometry, u: number, v: number, width: number, height: number, depth: number): void {
-	setUVs(box, u, v, width, height, depth, 64, 64);
+	setBoxUVs(box, u, v, width, height, depth, 64, 64);
 }
 
 function setCapeUVs(box: BoxGeometry, u: number, v: number, width: number, height: number, depth: number): void {
-	setUVs(box, u, v, width, height, depth, 64, 32);
+	setBoxUVs(box, u, v, width, height, depth, 64, 32);
 }
 
-/**
- * A Bone is any node that should support layered, animatable position/rotation. Without
- * being limited to the player's actual skeletal joints.
- *
- * Every bone has three layers of transform that are composed together each frame via {@link commit}:
- * - `base*`    - the rest-pose offset from the parent. Set once, never touched by animations.
- * - `origin*`  - written by the currently active "pose" animation
- * - `offset*`  - written by transient modifier states (basically swinging and jumping)
- *
- * Notice: because `commit()` recomputes the underlying position/rotation/quaternion from the
- * layers above, those properties are effectively read-only outputs on a bone - anything written above it
- * will be overwritten next time `commit()` runs.
- */
 export class Bone extends Group {
 	readonly basePosition: Vector3 = new Vector3();
 	readonly baseRotation: Euler = new Euler();
@@ -94,9 +107,6 @@ export class Bone extends Group {
 
 	private originQuaternionValue: Quaternion | null = null;
 
-	// Reused across every Bone's commit() call to avoid a per-frame, per-bone
-	// allocation. This is safe as long as commit() finishes using them before
-	// returning (it does, and commit() never re-enters itself)
 	private static readonly tempQuatA = new Quaternion();
 	private static readonly tempQuatB = new Quaternion();
 
@@ -116,7 +126,6 @@ export class Bone extends Group {
 		this.offsetPosition.set(x, y, z);
 	}
 
-	// used by poses that are expressed as quaternions (like swimming)
 	setOriginQuaternion(q: Quaternion): void {
 		if (this.originQuaternionValue === null) {
 			this.originQuaternionValue = new Quaternion();
@@ -125,34 +134,22 @@ export class Bone extends Group {
 		this.originQuaternionValue.copy(q);
 	}
 
-	/**
-	 * Resets the rest-pose (base) position and rotation of this bone.
-	 */
 	resetBase(): void {
 		this.basePosition.set(0, 0, 0);
 		this.baseRotation.set(0, 0, 0);
 	}
 
-	/**
-	 * Resets the origin position and rotation of this bone.
-	 */
 	resetOrigin(): void {
 		this.originPosition.set(0, 0, 0);
 		this.originRotation.set(0, 0, 0);
 		this.originQuaternionValue = null;
 	}
 
-	/**
-	 * Resets the offset position and rotation of this bone.
-	 */
 	resetOffset(): void {
 		this.offsetPosition.set(0, 0, 0);
 		this.offsetRotation.set(0, 0, 0);
 	}
 
-	/**
-	 * Resets base + origin + offset all at once, and commits the result.
-	 */
 	resetAll(): void {
 		this.resetBase();
 		this.resetOrigin();
@@ -160,10 +157,6 @@ export class Bone extends Group {
 		this.commit();
 	}
 
-	/**
-	 * Composes a base + origin + offset into the actual position and rotation of this bone.
-	 * This is the only place that writes to the underlying position/rotation/quaternion properties.
-	 */
 	commit(): void {
 		this.position.set(
 			this.basePosition.x + this.originPosition.x + this.offsetPosition.x,
@@ -174,8 +167,6 @@ export class Bone extends Group {
 		const hasBaseRotation = this.baseRotation.x !== 0 || this.baseRotation.y !== 0 || this.baseRotation.z !== 0;
 
 		if (this.originQuaternionValue !== null) {
-			// origin is expressed as a quaternion (like swimming) offset is
-			// still an Euler delta layered on top of it.
 			Bone.tempQuatA.setFromEuler(this.offsetRotation);
 			Bone.tempQuatB.copy(this.originQuaternionValue).multiply(Bone.tempQuatA);
 
@@ -195,12 +186,6 @@ export class Bone extends Group {
 	}
 }
 
-/**
- * Recursively commits every {@link Bone} in the given subtree (including the
- * root itself, if it is a Bone). Call order doesn't matter: each bone's
- * commit() only depends on its own base/origin/offset values, never on its
- * parent's committed transform.
- */
 export function commitBones(root: Object3D): void {
 	root.traverse(obj => {
 		if (obj instanceof Bone) {
@@ -209,9 +194,6 @@ export function commitBones(root: Object3D): void {
 	});
 }
 
-/**
- * Notice that innerLayer and outerLayer may NOT be the direct children of the Group.
- */
 export class BodyPart extends Bone {
 	constructor(
 		readonly innerLayer: Object3D,
@@ -224,7 +206,6 @@ export class BodyPart extends Bone {
 }
 
 export class SkinObject extends Bone {
-	// body parts
 	readonly head: BodyPart;
 	readonly body: BodyPart;
 	readonly rightArm: BodyPart;
@@ -232,22 +213,22 @@ export class SkinObject extends Bone {
 	readonly rightLeg: BodyPart;
 	readonly leftLeg: BodyPart;
 
-	private modelListeners: Array<() => void> = []; // called when model(slim property) is changed
+	private modelListeners: Array<() => void> = [];
 	private slim = false;
 
 	private _map: Texture | null = null;
-	private layer1Material: MeshStandardMaterial;
-	private layer1MaterialBiased: MeshStandardMaterial;
-	private layer2Material: MeshStandardMaterial;
-	private layer2MaterialBiased: MeshStandardMaterial;
+	private layer1Material: MeshBasicMaterial;
+	private layer1MaterialBiased: MeshBasicMaterial;
+	private layer2Material: MeshBasicMaterial;
+	private layer2MaterialBiased: MeshBasicMaterial;
 
 	constructor() {
 		super();
 
-		this.layer1Material = new MeshStandardMaterial({
+		this.layer1Material = new MeshBasicMaterial({
 			side: FrontSide,
 		});
-		this.layer2Material = new MeshStandardMaterial({
+		this.layer2Material = new MeshBasicMaterial({
 			side: DoubleSide,
 			transparent: true,
 			alphaTest: 1e-5,
@@ -263,7 +244,6 @@ export class SkinObject extends Bone {
 		this.layer2MaterialBiased.polygonOffsetFactor = 1.0;
 		this.layer2MaterialBiased.polygonOffsetUnits = 1.0;
 
-		// Head
 		const headBox = new BoxGeometry(8, 8, 8);
 		setSkinUVs(headBox, 0, 0, 8, 8, 8);
 		const headMesh = new Mesh(headBox, this.layer1Material);
@@ -280,7 +260,6 @@ export class SkinObject extends Bone {
 		this.head.setBasePosition(0, 0, 0);
 		this.add(this.head);
 
-		// Body
 		const bodyBox = new BoxGeometry(8, 12, 4);
 		setSkinUVs(bodyBox, 16, 16, 8, 12, 4);
 		const bodyMesh = new Mesh(bodyBox, this.layer1Material);
@@ -295,7 +274,6 @@ export class SkinObject extends Bone {
 		this.body.setBasePosition(0, -6, 0);
 		this.add(this.body);
 
-		// Right Arm
 		const rightArmBox = new BoxGeometry();
 		const rightArmMesh = new Mesh(rightArmBox, this.layer1MaterialBiased);
 		this.modelListeners.push(() => {
@@ -327,7 +305,6 @@ export class SkinObject extends Bone {
 		this.rightArm.setBasePosition(-5, 4, 0);
 		this.body.add(this.rightArm);
 
-		// Left Arm
 		const leftArmBox = new BoxGeometry();
 		const leftArmMesh = new Mesh(leftArmBox, this.layer1MaterialBiased);
 		this.modelListeners.push(() => {
@@ -359,7 +336,6 @@ export class SkinObject extends Bone {
 		this.leftArm.setBasePosition(5, 4, 0);
 		this.body.add(this.leftArm);
 
-		// Right Leg
 		const rightLegBox = new BoxGeometry(4, 12, 4);
 		setSkinUVs(rightLegBox, 0, 16, 4, 12, 4);
 		const rightLegMesh = new Mesh(rightLegBox, this.layer1MaterialBiased);
@@ -378,7 +354,6 @@ export class SkinObject extends Bone {
 		this.rightLeg.setBasePosition(-1.9, -12, -0.1);
 		this.add(this.rightLeg);
 
-		// Left Leg
 		const leftLegBox = new BoxGeometry(4, 12, 4);
 		setSkinUVs(leftLegBox, 16, 48, 4, 12, 4);
 		const leftLegMesh = new Mesh(leftLegBox, this.layer1MaterialBiased);
@@ -435,7 +410,6 @@ export class SkinObject extends Bone {
 		return this.children.filter(it => it instanceof BodyPart) as Array<BodyPart>;
 	}
 
-	// all bones in order
 	get bones(): Bone[] {
 		return [this.head, this.body, this.rightArm, this.leftArm, this.rightLeg, this.leftLeg];
 	}
@@ -469,19 +443,17 @@ export class SkinObject extends Bone {
 export class CapeObject extends Bone {
 	readonly cape: Mesh;
 
-	private material: MeshStandardMaterial;
+	private material: MeshBasicMaterial;
 
 	constructor() {
 		super();
 
-		this.material = new MeshStandardMaterial({
+		this.material = new MeshBasicMaterial({
 			side: DoubleSide,
 			transparent: true,
 			alphaTest: 1e-5,
 		});
 
-		// +z (front) - inside of cape
-		// -z (back) - outside of cape
 		const capeBox = new BoxGeometry(10, 16, 1);
 		setCapeUVs(capeBox, 0, 0, 10, 16, 1);
 		this.cape = new Mesh(capeBox, this.material);
@@ -504,12 +476,12 @@ export class ElytraObject extends Bone {
 	readonly leftWing: Group;
 	readonly rightWing: Group;
 
-	private material: MeshStandardMaterial;
+	private material: MeshBasicMaterial;
 
 	constructor() {
 		super();
 
-		this.material = new MeshStandardMaterial({
+		this.material = new MeshBasicMaterial({
 			side: DoubleSide,
 			transparent: true,
 			alphaTest: 1e-5,
@@ -542,15 +514,11 @@ export class ElytraObject extends Bone {
 	}
 
 	resetJoints(): void {
-		this.leftWing.rotation.y = 0.01; // to avoid z-fighting
+		this.leftWing.rotation.y = 0.01;
 		this.leftWing.rotation.z = 0.2617994;
 		this.updateRightWing();
 	}
 
-	/**
-	 * Mirrors the position & rotation of left wing,
-	 * and apply them to the right wing.
-	 */
 	updateRightWing(): void {
 		this.rightWing.position.x = -this.leftWing.position.x;
 		this.rightWing.position.y = this.leftWing.position.y;
@@ -569,23 +537,30 @@ export class ElytraObject extends Bone {
 	}
 }
 
-export class WingsObject extends Bone {
+export class DragonWingsObject extends Bone {
 	readonly leftWing: Group;
 	readonly rightWing: Group;
+	readonly leftWingTip: Object3D;
+	readonly rightWingTip: Object3D;
 
-	private material: MeshStandardMaterial;
+	private material: MeshBasicMaterial;
 
 	constructor() {
 		super();
 
-		this.material = new MeshStandardMaterial({
+		this.material = new MeshBasicMaterial({
 			side: DoubleSide,
 			transparent: true,
-			alphaTest: 0.1
+			alphaTest: 0.1,
 		});
 
-		this.leftWing = this.createWing();
-		this.rightWing = this.createWing();
+		const left = this.createWing();
+		const right = this.createWing();
+
+		this.leftWing = left.group;
+		this.rightWing = right.group;
+		this.leftWingTip = left.tip;
+		this.rightWingTip = right.tip;
 		this.rightWing.scale.x = -1;
 
 		this.add(this.leftWing);
@@ -597,19 +572,20 @@ export class WingsObject extends Bone {
 		this.resetJoints();
 	}
 
-	private createWing(): Group {
+	private createWing(): { group: Group; tip: Object3D } {
 		const wingGroup = new Group();
 		wingGroup.rotation.order = "ZYX";
 
 		const wingBoneBox = new BoxGeometry(56, 8, 8);
-		setUVs(wingBoneBox, 112, 88, 56, 8, 8, 256, 256);
+		setBoxUVs(wingBoneBox, 112, 88, 56, 8, 8, 256, 256);
 		const wingBone = new Mesh(wingBoneBox, this.material);
 		wingBone.position.set(-28, 0, 0);
 
-		const wingSkinBox = new BoxGeometry(56, 0, 56);
-		setUVs(wingSkinBox, -56, 88, 56, 0, 56, 256, 256);
-		const wingSkin = new Mesh(wingSkinBox, this.material);
+		const wingSkinPlane = new PlaneGeometry(56, 56);
+		setPlaneUVs(wingSkinPlane, 56, 88, 56, 56, 256, 256);
+		const wingSkin = new Mesh(wingSkinPlane, this.material);
 		wingSkin.position.set(-28, 0, -30);
+		wingSkin.rotation.set(Math.PI / 2, 0, 0);
 
 		wingGroup.add(wingBone, wingSkin);
 
@@ -619,20 +595,21 @@ export class WingsObject extends Bone {
 		wingTipGroup.position.set(-56, 0, 0);
 
 		const wingtipBoneBox = new BoxGeometry(56, 4, 4);
-		setUVs(wingtipBoneBox, 112, 136, 56, 4, 4, 256, 256);
+		setBoxUVs(wingtipBoneBox, 112, 136, 56, 4, 4, 256, 256);
 		const wingtipBone = new Mesh(wingtipBoneBox, this.material);
 		wingtipBone.position.set(-28, 0, 0);
 
-		const wingtipSkinBox = new BoxGeometry(56, 0, 56);
-		setUVs(wingtipSkinBox, -56, 144, 56, 0, 56, 256, 256);
-		const wingtipSkin = new Mesh(wingtipSkinBox, this.material);
+		const wingtipSkinPlane = new PlaneGeometry(56, 56);
+		setPlaneUVs(wingtipSkinPlane, 56, 144, 56, 56, 256, 256);
+		const wingtipSkin = new Mesh(wingtipSkinPlane, this.material);
 		wingtipSkin.position.set(-28, 0, -30);
+		wingtipSkin.rotation.set(Math.PI / 2, 0, 0);
 
 		wingTipGroup.add(wingtipBone, wingtipSkin);
 		wingGroup.add(wingTipGroup);
 
 		wingGroup.position.set(-12, -5, -2);
-		return wingGroup;
+		return { group: wingGroup, tip: wingTipGroup };
 	}
 
 	resetJoints(): void {
@@ -648,13 +625,7 @@ export class WingsObject extends Bone {
 		this.rightWing.rotation.x = this.leftWing.rotation.x;
 		this.rightWing.rotation.y = -this.leftWing.rotation.y;
 		this.rightWing.rotation.z = -this.leftWing.rotation.z;
-
-		const leftWingTip = this.leftWing.getObjectByName("wingTip");
-		const rightWingTip = this.rightWing.getObjectByName("wingTip");
-
-		if (leftWingTip && rightWingTip) {
-			rightWingTip.rotation.z = leftWingTip.rotation.z;
-		}
+		this.rightWingTip.rotation.z = this.leftWingTip.rotation.z;
 	}
 
 	get map(): Texture | null {
@@ -671,16 +642,16 @@ export class EarsObject extends Bone {
 	readonly rightEar: Mesh;
 	readonly leftEar: Mesh;
 
-	private material: MeshStandardMaterial;
+	private material: MeshBasicMaterial;
 
 	constructor() {
 		super();
 
-		this.material = new MeshStandardMaterial({
+		this.material = new MeshBasicMaterial({
 			side: FrontSide,
 		});
 		const earBox = new BoxGeometry(8, 8, 4 / 3);
-		setUVs(earBox, 0, 0, 6, 6, 1, 14, 7);
+		setBoxUVs(earBox, 0, 0, 6, 6, 1, 14, 7);
 
 		this.rightEar = new Mesh(earBox, this.material);
 		this.rightEar.name = "rightEar";
@@ -703,14 +674,24 @@ export class EarsObject extends Bone {
 	}
 }
 
+export type Cosmetic = "cape" | "dragonWings";
 export type BackEquipment = "cape" | "elytra" | "wings";
 
 export class PlayerObject extends Group {
+	cosmeticTimer: number = 0;
+
 	readonly skin: SkinObject;
 	readonly cape: CapeObject;
 	readonly elytra: ElytraObject;
-	readonly wings: WingsObject;
+	readonly dragonWings: DragonWingsObject;
+	/** @deprecated Use {@link dragonWings} */
+	readonly wings: DragonWingsObject;
 	readonly ears: EarsObject;
+
+	private _BOBJRig: EmoteBOBJRig | null = null;
+	private _BOBJDefaultRig: EmoteBOBJRig | null = null;
+	private _BOBJSlimRig: EmoteBOBJRig | null = null;
+	private _useBOBJModel = false;
 
 	constructor() {
 		super();
@@ -734,14 +715,15 @@ export class PlayerObject extends Group {
 		this.elytra.visible = false;
 		this.skin.body.add(this.elytra);
 
-		this.wings = new WingsObject();
-		this.wings.name = "wings";
-		this.wings.position.y = 6.5;
-		this.wings.position.z = -2;
-		this.wings.scale.set(0.12, 0.12, 0.12);
-		this.wings.rotation.x = 0.2617994;
-		this.wings.visible = false;
-		this.skin.body.add(this.wings);
+		this.dragonWings = new DragonWingsObject();
+		this.dragonWings.name = "dragonWings";
+		this.wings = this.dragonWings;
+		this.dragonWings.position.y = 6.5;
+		this.dragonWings.position.z = -2;
+		this.dragonWings.scale.set(0.12, 0.12, 0.12);
+		this.dragonWings.rotation.x = 0.2617994;
+		this.dragonWings.visible = false;
+		this.skin.body.add(this.dragonWings);
 
 		this.ears = new EarsObject();
 		this.ears.name = "ears";
@@ -751,6 +733,111 @@ export class PlayerObject extends Group {
 		this.skin.head.add(this.ears);
 	}
 
+	setBOBJRig(rig: EmoteBOBJRig | null): void {
+		if (this._BOBJRig) {
+			this.remove(this._BOBJRig.object);
+		}
+
+		this._BOBJRig = rig;
+
+		if (rig) {
+			rig.object.visible = this._useBOBJModel;
+			rig.setBodyTexture(this.skin.map);
+			this.add(rig.object);
+		}
+
+		this._setBOBJCosmetics();
+	}
+
+	private _setBOBJCosmetics(): void {
+		const rig = this._useBOBJModel ? this._BOBJRig : null;
+
+		for (const cosmetic of [this.cape, this.elytra, this.dragonWings]) {
+			if (!rig || !rig.attachCosmetic(cosmetic)) {
+				this.skin.body.add(cosmetic);
+			}
+		}
+	}
+
+	setBOBJRigs(defaultRig: EmoteBOBJRig | null, slimRig: EmoteBOBJRig | null): void {
+		this._BOBJDefaultRig = defaultRig;
+		this._BOBJSlimRig = slimRig;
+
+		this.setBOBJRig(this.skin.modelType === "slim" ? slimRig : defaultRig);
+	}
+
+	syncBOBJModelType(): void {
+		if (!this._BOBJDefaultRig && !this._BOBJSlimRig) return;
+
+		const rig = this.skin.modelType === "slim" ? this._BOBJSlimRig : this._BOBJDefaultRig;
+
+		if (rig !== this._BOBJRig) {
+			this.setBOBJRig(rig);
+		} else {
+			rig?.setBodyTexture(this.skin.map);
+		}
+	}
+
+	get bobjRig(): EmoteBOBJRig | null {
+		return this._BOBJRig;
+	}
+
+	get useBOBJModel(): boolean {
+		return this._useBOBJModel;
+	}
+
+	set useBOBJModel(value: boolean) {
+		this._useBOBJModel = value;
+
+		for (const part of [
+			this.skin.head,
+			this.skin.body,
+			this.skin.rightArm,
+			this.skin.leftArm,
+			this.skin.rightLeg,
+			this.skin.leftLeg,
+		]) {
+			part.innerLayer.visible = !value;
+			part.outerLayer.visible = !value;
+		}
+
+		if (this._BOBJRig) {
+			this._BOBJRig.object.visible = value;
+		}
+
+		this._setBOBJCosmetics();
+	}
+
+	get cosmetics(): Cosmetic[] {
+		const cosmetics: Cosmetic[] = [];
+
+		if (this.cape.visible || this.elytra.visible) cosmetics.push("cape");
+		if (this.dragonWings.visible) cosmetics.push("dragonWings");
+
+		return cosmetics;
+	}
+
+	set cosmetics(values: readonly Cosmetic[]) {
+		const set = new Set(values);
+		this.cape.visible = set.has("cape") && !this.capeElytra;
+		this.elytra.visible = set.has("cape") && this.capeElytra;
+		this.dragonWings.visible = set.has("dragonWings");
+	}
+
+	get capeElytra(): boolean {
+		return this.elytra.visible;
+	}
+
+	set capeElytra(value: boolean) {
+		this.elytra.visible = value && this.cape.visible;
+		this.cape.visible = !value;
+	}
+
+	setDragonWingsVisible(value: boolean): void {
+		this.dragonWings.visible = value;
+	}
+
+	/** @deprecated Use {@link cosmetics} */
 	get backEquipment(): BackEquipment | null {
 		if (this.cape.visible) {
 			return "cape";
@@ -763,6 +850,7 @@ export class PlayerObject extends Group {
 		}
 	}
 
+	/** @deprecated Use {@link cosmetics} */
 	set backEquipment(value: BackEquipment | null) {
 		this.cape.visible = value === "cape";
 		this.elytra.visible = value === "elytra";
@@ -783,9 +871,9 @@ export class PlayerObject extends Group {
 		this.elytra.rotation.x = 0;
 		this.elytra.resetJoints();
 
-		this.wings.position.y = 6;
-		this.wings.position.z = -2;
-		this.wings.rotation.x = 0.2617994;
-		this.wings.resetJoints();
+		this.dragonWings.position.y = 6;
+		this.dragonWings.position.z = -2;
+		this.dragonWings.rotation.x = 0.2617994;
+		this.dragonWings.resetJoints();
 	}
 }

@@ -19,6 +19,7 @@ export declare function findKeyframeSegment<T>(keyframes: readonly Keyframe<T>[]
  * Samples a keyframe track using a custom interpolation function
  */
 export declare function sampleKeyframes<T>(keyframes: readonly Keyframe<T>[], time: number, interpolate: (a: T, b: T, t: number) => T): T;
+export declare function degToRad(deg: number): number;
 /**
  * Function that maps a normalized time to an eased value (0..1)
  */
@@ -33,8 +34,8 @@ export declare function clamp(value: number, min: number, max: number): number;
 export declare function clamp01(value: number): number;
 /**
  * Linearly interpolates between 2 values
- * t = 0 -> a
- * t = 1 -> b
+ * t = 0 → a
+ * t = 1 → b
  */
 export declare function lerp(a: number, b: number, t: number): number;
 /**
@@ -48,6 +49,14 @@ export declare function inverseLerp(a: number, b: number, value: number): number
  * Maps a value from one range into another
  */
 export declare function remap(value: number, inMin: number, inMax: number, outMin: number, outMax: number): number;
+/**
+ * Cubic Bezier evaluation
+ */
+export declare function bezier(p0: number, p1: number, p2: number, p3: number, t: number): number;
+/**
+ * Random float in [-half, half]
+ */
+export declare function jitter(half: number): number;
 export declare const linear: EasingFn;
 export declare const easeInSine: EasingFn;
 export declare const easeOutSine: EasingFn;
@@ -97,7 +106,7 @@ export declare const Easings: {
 export type EasingName = keyof typeof Easings;
 /**
  * Produces a symmetric arc using an easing function
- * 0 -> height -> 0
+ * 0 → height → 0
  */
 export declare function easingArc(t: number, height?: number, easing?: EasingFn): number;
 /**
@@ -111,7 +120,11 @@ export declare function lerpEuler(a: {
     x: number;
     y: number;
     z: number;
-}, t: number): {
+}, t: number, out?: {
+    x: number;
+    y: number;
+    z: number;
+}): {
     x: number;
     y: number;
     z: number;
@@ -138,7 +151,11 @@ export type EulerKeyframe = Keyframe<{
  * between them to create a smooth rotation value
  * @param keyframes - Euler rotation keyframes
  */
-export declare function sampleEulerKeyframes(keyframes: readonly EulerKeyframe[], time: number): {
+export declare function sampleEulerKeyframes(keyframes: readonly EulerKeyframe[], time: number, out?: {
+    x: number;
+    y: number;
+    z: number;
+}): {
     x: number;
     y: number;
     z: number;

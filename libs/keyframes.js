@@ -67,46 +67,4 @@ export const swimRightArm = [
         },
     },
 ];
-export const breathing = [
-    {
-        time: 0,
-        value: {
-            x: -Math.PI * 0.02,
-            y: 0,
-            z: 0,
-        },
-    },
-    {
-        time: 0.25,
-        value: {
-            x: Math.PI * 0.005,
-            y: 0,
-            z: 0,
-        },
-    },
-    {
-        time: 0.5,
-        value: {
-            x: Math.PI * 0.01,
-            y: 0,
-            z: 0,
-        },
-    },
-    {
-        time: 0.75,
-        value: {
-            x: -Math.PI * 0.01,
-            y: 0,
-            z: 0,
-        },
-    },
-    {
-        time: 1,
-        value: {
-            x: -Math.PI * 0.02,
-            y: 0,
-            z: 0,
-        },
-    },
-];
 //# sourceMappingURL=keyframes.js.map

@@ -164,13 +164,6 @@
 					<label><input type="radio" id="animation_fly" name="animation" value="fly" /> Fly</label>
 					<label><input type="radio" id="animation_swim" name="animation" value="swim" /> Swim</label>
 					<label><input type="radio" id="animation_sit" name="animation" value="sit" /> Sit</label>
-					<label
-						><input type="radio" id="animation_wardrobe_idle" name="animation" value="wardrobe_idle" /> (CB) Idle</label
-					>
-					<label
-						><input type="radio" id="animation_wardrobe_idle2" name="animation" value="wardrobe_idle2" /> (CB)
-						Idle2</label
-					>
 				</div>
 				<label class="control">Speed: <input id="animation_speed" type="number" value="1" step="0.1" size="3" /></label>
 				<button id="animation_pause_resume" type="button" class="control">Pause / Resume</button>
@@ -201,11 +194,39 @@
 			</div>
 
 			<div class="control-section">
+				<h1>Emotes</h1>
+				<div id="emote_status" class="control">Loading emotes&hellip;</div>
+				<div id="emote_grid" class="emote-grid"></div>
+				<button id="emote_stop" type="button" class="control" disabled>Stop Emote</button>
+			</div>
+
+			<div class="control-section">
 				<h1>Mouse Control</h1>
 				<div class="control">
 					<label><input type="checkbox" id="control_rotate" checked /> Enable Rotate</label>
 					<label><input type="checkbox" id="control_zoom" checked /> Enable Zoom</label>
 					<label><input type="checkbox" id="control_pan" /> Enable Pan</label>
+				</div>
+			</div>
+
+			<div class="control-section">
+				<h1>Focus</h1>
+				<div class="control">
+					<label
+						>Target:
+						<select id="focus_target">
+							<option value="player">Player</option>
+							<option value="head">Head</option>
+							<option value="cape">Cape</option>
+							<option value="elytra">Elytra</option>
+							<option value="dragonWings">Dragon Wings</option>
+							<option value="ears">Ears</option>
+						</select>
+					</label>
+					<label
+						>Zoom: <input id="focus_zoom" type="number" value="" step="0.01" min="0.01" max="2.00" size="4"
+					/></label>
+					<button id="focus_apply" type="button" class="control">Focus</button>
 				</div>
 			</div>
 
@@ -245,13 +266,17 @@
 					</tbody>
 				</table>
 				<div>
-					<h2>Back Equipment</h2>
+					<h2>Cosmetics</h2>
 					<div class="control">
-						<label
-							><input type="radio" id="back_equipment_cape" name="back_equipment" value="cape" checked /> Cape</label
-						>
-						<label><input type="radio" id="back_equipment_elytra" name="back_equipment" value="elytra" /> Elytra</label>
-						<label><input type="radio" id="back_equipment_wings" name="back_equipment" value="wings" /> Wings</label>
+						<label><input type="checkbox" id="cosmetic_cape" checked /> Cape</label>
+						<label class="control"
+							>Style:
+							<select id="cape_style">
+								<option value="cape">Cape</option>
+								<option value="elytra">Elytra</option>
+							</select>
+						</label>
+						<label><input type="checkbox" id="cosmetic_dragon_wings" /> Dragon Wings</label>
 					</div>
 				</div>
 			</div>
@@ -323,28 +348,31 @@
 						Browse...
 					</button>
 				</div>
+				<div class="control">
+					<label><input type="checkbox" id="cape_sway_enabled" /> Cape Sway</label>
+				</div>
 			</div>
 
 			<div class="control-section">
-				<h1>Wings</h1>
+				<h1>Dragon Wings</h1>
 				<div class="control">
 					<label
 						>URL:
 						<input
-							id="wings_url"
+							id="dragon_wings_url"
 							type="text"
 							value="img/dragon_wings.png"
 							placeholder="none"
-							list="default_wings"
+							list="default_dragon_wings"
 							size="20"
 					/></label>
-					<datalist id="default_wings">
+					<datalist id="default_dragon_wings">
 						<option value="img/dragon_wings.png"></option>
 						<option value=""></option>
 					</datalist>
-					<input id="wings_url_upload" type="file" class="hidden" accept="image/*" />
-					<button id="wings_url_unset" type="button" class="control hidden">Unset</button>
-					<button type="button" class="control" onclick="document.getElementById('wings_url_upload').click()">
+					<input id="dragon_wings_url_upload" type="file" class="hidden" accept="image/*" />
+					<button id="dragon_wings_url_unset" type="button" class="control hidden">Unset</button>
+					<button type="button" class="control" onclick="document.getElementById('dragon_wings_url_upload').click()">
 						Browse...
 					</button>
 				</div>
@@ -375,6 +403,23 @@
 					<input id="ears_url_upload" type="file" class="hidden" accept="image/*" />
 					<button id="ears_url_unset" type="button" class="control hidden">Unset</button>
 					<button type="button" class="control" onclick="document.getElementById('ears_url_upload').click()">
+						Browse...
+					</button>
+				</div>
+			</div>
+
+			<div class="control-section">
+				<h1>Shadow</h1>
+				<div class="control">
+					<label><input type="checkbox" id="shadow_enabled" /> Enable</label>
+				</div>
+				<div class="control">
+					<label
+						>URL: <input id="shadow_url" type="text" value="" placeholder="default (soft circle)" size="20"
+					/></label>
+					<input id="shadow_url_upload" type="file" class="hidden" accept="image/*" />
+					<button id="shadow_url_unset" type="button" class="control hidden">Unset</button>
+					<button type="button" class="control" onclick="document.getElementById('shadow_url_upload').click()">
 						Browse...
 					</button>
 				</div>

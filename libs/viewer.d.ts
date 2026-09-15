@@ -1,11 +1,11 @@
 import { type ModelType, type RemoteImage, type TextureSource } from "skinview-utils";
-import { Color, type ColorRepresentation, PointLight, Group, PerspectiveCamera, Scene, Texture, WebGLRenderer, AmbientLight, type Mapping } from "three";
+import { Color, type ColorRepresentation, PointLight, Group, PerspectiveCamera, Scene, Texture, WebGLRenderer, AmbientLight, type Mapping, Object3D } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { PlayerAnimation } from "./animation.js";
-import { type BackEquipment, PlayerObject } from "./model.js";
+import { type Cosmetic, PlayerObject } from "./model.js";
 import { NameTagObject } from "./nametag.js";
 export interface LoadOptions {
     /**
@@ -38,23 +38,13 @@ export interface SkinLoadOptions extends LoadOptions {
 }
 export interface CapeLoadOptions extends LoadOptions {
     /**
-     * The equipment (`"cape"` or `"elytra"`) to show when the cape texture is loaded.
+     * Render the Cape as Elytra instead of a cape.
      *
-     * If `makeVisible` is set to false, this option will have no effect.
-     *
-     * @defaultValue `"cape"`
+     * @defaultValue `false`
      */
-    backEquipment?: BackEquipment;
+    elytra?: boolean;
 }
-export interface WingsRenderOptions extends LoadOptions {
-    /**
-     * The equipment (`"wings"`) to show when the wings texture is loaded.
-     *
-     * If `makeVisible` is set to false, this option will have no effect.
-     *
-     * @defaultValue `"wings"`
-     */
-    backEquipment?: BackEquipment;
+export interface DragonWingsRenderOptions extends LoadOptions {
 }
 export interface EarsLoadOptions extends LoadOptions {
     /**
@@ -118,6 +108,8 @@ export interface SkinViewerOptions {
      *
      * @defaultValue If unspecified, the wings will be invisible.
      */
+    dragonWings?: RemoteImage | TextureSource;
+    /** @deprecated Use {@link dragonWings}. */
     wings?: RemoteImage | TextureSource;
     /**
      * The ear texture of the player.
@@ -205,6 +197,7 @@ export interface SkinViewerOptions {
      */
     nameTag?: NameTagObject | string;
 }
+export type SkinViewerFocus = "player" | "head" | "cape" | "elytra" | "dragonWings" | "wings" | "ears" | Object3D;
 /**
  * The SkinViewer renders the player on a canvas.
  */
@@ -254,11 +247,15 @@ export declare class SkinViewer {
     private isUserRotating;
     private onKeyDown;
     private onKeyUp;
+    private onBlur;
     private onMouseDown;
+    private onMouseUp;
+    private onTouchMove;
+    private onTouchEnd;
     /**
      * Whether cape swaying (a subtle rotation to the cape as the
      * camera orbits around the player) is currently enabled.
-     * @defaultValue `true`
+     * @defaultValue `false`
      * @see {@link enableCapeSway}
      * @see {@link disableCapeSway}
      */
@@ -269,7 +266,7 @@ export declare class SkinViewer {
     private _capeDrive;
     /**
      * Whether a shadow mesh (below the player) is currently enabled.
-     * @defaultValue `true`
+     * @defaultValue `false`
      * @see {@link enableShadow}
      * @see {@link disableShadow}
      */
@@ -298,11 +295,23 @@ export declare class SkinViewer {
     private onDevicePixelRatioChange;
     private _nameTag;
     private nameTagYOffset;
+    private readonly scratchVector3;
+    private readonly boundDraw;
     constructor(options?: SkinViewerOptions);
+    private doAction;
+    private interruptEmote;
     private updateComposerSize;
     private recreateSkinTexture;
     private recreateCapeTexture;
     private recreateEarsTexture;
+    /**
+     * Shows only the selected cosmetic, hiding all others.
+     *
+     * When showing the cape, it can optionally be shown as an Elytra instead of a cape.
+     */
+    setCosmetic(cosmetic: Cosmetic | null, options?: {
+        elytra?: boolean;
+    }): void;
     loadSkin(empty: null): void;
     loadSkin<S extends TextureSource | RemoteImage>(source: S, options?: SkinLoadOptions): S extends TextureSource ? void : Promise<void>;
     resetSkin(): void;
@@ -340,8 +349,12 @@ export declare class SkinViewer {
      */
     disableCapeSway(): void;
     private recreateWingsTexture;
-    loadWings(empty: null): void;
-    loadWings<S extends TextureSource | RemoteImage>(source: S, options?: WingsRenderOptions): S extends TextureSource ? void : Promise<void>;
+    loadDragonWings(empty: null): void;
+    loadDragonWings<S extends TextureSource | RemoteImage>(source: S, options?: DragonWingsRenderOptions): S extends TextureSource ? void : Promise<void>;
+    resetDragonWings(): void;
+    /** @deprecated Use {@link loadDragonWings}. */
+    loadWings<S extends TextureSource | RemoteImage>(source: S, options?: DragonWingsRenderOptions): S extends TextureSource ? void : Promise<void>;
+    /** @deprecated Use {@link resetDragonWings}. */
     resetWings(): void;
     loadEars(empty: null): void;
     loadEars<S extends TextureSource | RemoteImage>(source: S, options?: EarsLoadOptions): S extends TextureSource ? void : Promise<void>;
@@ -380,6 +393,10 @@ export declare class SkinViewer {
     loadShadow<S extends TextureSource | RemoteImage>(source: S): S extends TextureSource ? void : Promise<void>;
     resetShadow(): void;
     private draw;
+    /**
+     * Focuses the camera on a part of the player.
+     */
+    focus(target: SkinViewerFocus, zoom?: number): void;
     /**
      * Renders the scene to the canvas.
      * This method does not change the animation progress.
