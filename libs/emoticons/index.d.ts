@@ -15,8 +15,12 @@ export type EmoteBoneName = (typeof BONE_NAMES)[number];
 export interface EmoteTrigger {
     readonly bone: EmoteBoneName;
     readonly offset: readonly [number, number, number];
+    readonly bobjAttachment?: {
+        readonly bone: string;
+        readonly offset: readonly [number, number, number];
+    };
     countAt(localTick: number): number;
-    spawn(system: ParticleSystem, position: Vector3, count: number): void;
+    spawn(system: ParticleSystem, position: Vector3, count: number, localTick: number): void;
 }
 export interface EmoteDefinition {
     readonly key: string;

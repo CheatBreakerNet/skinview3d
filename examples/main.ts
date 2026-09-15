@@ -99,6 +99,7 @@ async function playEmote(key: string): Promise<void> {
 	}
 
 	emoteAnimation.playEmote(definition, emoteRegistry);
+	particleSystem?.clear();
 
 	const animationSpeed = document.getElementById("animation_speed") as HTMLInputElement;
 	emoteAnimation.speed = Number(animationSpeed?.value) || 1;
@@ -174,7 +175,9 @@ function emoticonsTick(now: number): void {
 		const dt = Math.min((now - last) / 1000, 0.1);
 		lastParticleTime = now;
 
-		particleSystem.update(dt, skinViewer?.camera);
+		const speed = emoteAnimation?.speed ?? 1;
+		const paused = activeEmoteKey !== null && emoteAnimation?.paused;
+		particleSystem.update(paused ? 0 : dt * Math.max(0, speed), skinViewer?.camera);
 	}
 
 	if (emoteAnimation && activeEmoteKey !== null) {
@@ -244,13 +247,14 @@ let popcornTexture: import("three").Texture;
 async function initializeEmoticons(): Promise<void> {
 	const textureLoader = new TextureLoader();
 
-	const [actionsBobjText, loadedPopcornTexture, saltTexture] = await Promise.all([
+	const [actionsBobjText, loadedPopcornTexture, particleTexture, minecraftParticleTexture] = await Promise.all([
 		fetch("./emoticons/actions.bobj").then(res => {
 			if (!res.ok) throw new Error(`Failed to load actions.bobj (${res.status})`);
 			return res.text();
 		}),
 		textureLoader.loadAsync("./emoticons/popcorn.png"),
 		textureLoader.loadAsync("./emoticons/particles.png"),
+		textureLoader.loadAsync("./emoticons/minecraft-particles.png"),
 	]);
 
 	popcornTexture = loadedPopcornTexture;
@@ -260,7 +264,11 @@ async function initializeEmoticons(): Promise<void> {
 	skinViewer.playerObject.setBOBJRigs(bobjRig, null);
 	syncEmoteSkinTexture();
 
-	particleSystem = new skinview3d.ParticleSystem({ popcorn: popcornTexture, salt: saltTexture });
+	particleSystem = new skinview3d.ParticleSystem({
+		popcorn: particleTexture,
+		salt: particleTexture,
+		minecraft: minecraftParticleTexture,
+	});
 	skinViewer.scene.add(particleSystem);
 
 	emoteRegistry = skinview3d.buildEmoteRegistry(bobjActions);

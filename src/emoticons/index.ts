@@ -1,4 +1,4 @@
-import { Vector3 } from "three";
+import { Color, Vector3 } from "three";
 import { IdleAnimation, PlayerAnimation, type AnimationActions } from "../animation.js";
 import type { PlayerObject } from "../model.js";
 
@@ -34,9 +34,10 @@ const FACE_OFFSET: readonly [number, number, number] = [0, 6, 3];
 export interface EmoteTrigger {
 	readonly bone: EmoteBoneName;
 	readonly offset: readonly [number, number, number];
+	readonly bobjAttachment?: { readonly bone: string; readonly offset: readonly [number, number, number] };
 
 	countAt(localTick: number): number;
-	spawn(system: ParticleSystem, position: Vector3, count: number): void;
+	spawn(system: ParticleSystem, position: Vector3, count: number, localTick: number): void;
 }
 
 export interface EmoteDefinition {
@@ -85,12 +86,27 @@ function makeTrigger(
 	bone: EmoteBoneName,
 	offset: readonly [number, number, number],
 	countAt: (localTick: number) => number,
-	spawn: (system: ParticleSystem, position: Vector3, count: number) => void
+	spawn: EmoteTrigger["spawn"],
+	bobjAttachment?: EmoteTrigger["bobjAttachment"]
 ): EmoteTrigger {
-	return { bone, offset, countAt, spawn };
+	return { bone, offset, countAt, spawn, bobjAttachment };
 }
 
 const POPCORN_TICKS = new Set([8, 32, 56, 86]);
+const RIGHT_HAND_ATTACHMENT: EmoteTrigger["bobjAttachment"] = {
+	bone: "low_right_arm.end",
+	offset: [0, 0.15, 0],
+};
+
+function starPowerColor(tick: number): Color {
+	const progress = (tick - 33) / 10;
+	if (progress < 0.2) return new Color().setRGB(1, 0, 0);
+	if (progress < 0.35) return new Color().setRGB(1, 0.5, 0);
+	if (progress < 0.45) return new Color().setRGB(1, 1, 0);
+	if (progress < 0.65) return new Color().setRGB(0.25, 1, 0);
+	if (progress < 0.85) return new Color().setRGB(0, 0.75, 1);
+	return new Color().setRGB(0, 0, 1);
+}
 
 const SPECIAL_TRIGGERS: Record<string, () => readonly EmoteTrigger[]> = {
 	popcorn: () => [
@@ -98,7 +114,8 @@ const SPECIAL_TRIGGERS: Record<string, () => readonly EmoteTrigger[]> = {
 			"rightArm",
 			HAND_OFFSET,
 			tick => (POPCORN_TICKS.has(tick) ? 15 : 0),
-			(system, position, count) => system.spawnPopcorn(position, count)
+			(system, position, count) => system.spawnPopcorn(position, count),
+			RIGHT_HAND_ATTACHMENT
 		),
 	],
 	pure_salt: () => [
@@ -106,7 +123,8 @@ const SPECIAL_TRIGGERS: Record<string, () => readonly EmoteTrigger[]> = {
 			"rightArm",
 			HAND_OFFSET,
 			tick => (tick === 78 ? 12 : tick > 18 && tick <= 78 && tick % 2 === 0 ? 1 : 0),
-			(system, position, count) => system.spawnSalt(position, count)
+			(system, position, count) => system.spawnSalt(position, count),
+			RIGHT_HAND_ATTACHMENT
 		),
 	],
 	sneeze: () => [
@@ -137,8 +155,16 @@ const SPECIAL_TRIGGERS: Record<string, () => readonly EmoteTrigger[]> = {
 		makeTrigger(
 			"rightArm",
 			HAND_OFFSET,
-			tick => (tick === 30 ? 25 : tick >= 33 && tick < 43 ? 6 : 0),
-			(system, position, count) => system.spawnPuff(position, "sparkle", count)
+			tick => (tick === 30 ? 15 : 0),
+			(system, position, count) => system.spawnEnchantment(position, count),
+			RIGHT_HAND_ATTACHMENT
+		),
+		makeTrigger(
+			"rightArm",
+			HAND_OFFSET,
+			tick => (tick >= 33 && tick < 43 ? 7 : 0),
+			(system, position, count, tick) => system.spawnSpell(position, starPowerColor(tick), count),
+			RIGHT_HAND_ATTACHMENT
 		),
 	],
 };
@@ -297,6 +323,7 @@ export class EmoteAnimation extends PlayerAnimation {
 			bone.scale.set(sample.scale[0], sample.scale[1], sample.scale[2]);
 		}
 
+		player.skin.commitPose();
 		this._fireTriggers(player, totalTicks);
 		this._prevTotalTicks = totalTicks;
 	}
@@ -320,15 +347,20 @@ export class EmoteAnimation extends PlayerAnimation {
 			for (const trigger of triggers) {
 				const count = trigger.countAt(localTick);
 				if (count <= 0) continue;
+				if (this._BOBJRig && player.useBOBJModel) this._BOBJRig.applyAction(this._action, localTick);
 
-				const boneName = BOBJ_BONE_NAME[trigger.bone];
+				const attachment = trigger.bobjAttachment;
+				const boneName = attachment?.bone ?? BOBJ_BONE_NAME[trigger.bone];
 				const bobjBone = this._BOBJRig && player.useBOBJModel ? this._BOBJRig.getBone(boneName) : null;
 
 				const bone = bobjBone ?? player.skin[trigger.bone];
-				const position = bone.localToWorld(new Vector3(...trigger.offset));
+				const offset = new Vector3(...(bobjBone && attachment ? attachment.offset : trigger.offset));
+				if (bobjBone && !attachment) offset.divideScalar(16);
+				const position = bone.localToWorld(offset);
 
-				trigger.spawn(this._particles, position, count);
+				trigger.spawn(this._particles, position, count, localTick);
 			}
 		}
+		if (this._BOBJRig && player.useBOBJModel) this._BOBJRig.applyAction(this._action, this._frameAt(totalTicks));
 	}
 }

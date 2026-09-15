@@ -10,6 +10,7 @@ import {
 	NearestFilter,
 	Object3D,
 	PlaneGeometry,
+	Quaternion,
 	Texture,
 	Vector3,
 	type ColorRepresentation,
@@ -30,6 +31,7 @@ export type ParticleKind = "popcorn" | "salt" | "cloud" | "tear" | "crumb" | "sp
 export interface ParticleTextures {
 	popcorn?: Texture;
 	salt?: Texture;
+	minecraft?: Texture;
 }
 
 interface Particle {
@@ -39,33 +41,43 @@ interface Particle {
 	readonly baseScale: number;
 	readonly billboard: boolean;
 	readonly ownsMaterial: boolean;
+	readonly behavior: "falling" | "spell" | "enchantment";
+	readonly origin: Vector3;
 
 	age: number;
 	readonly maxAge: number;
 }
 
-function rngPalette(size: number): BoxGeometry {
+function kernelGeometry(row: number, salt = false): BoxGeometry {
 	const geometry = new BoxGeometry(1, 1, 1);
 	const uv = geometry.attributes.uv as BufferAttribute;
-
-	const cellX = Math.floor(Math.random() * size);
-	const cellY = Math.floor(Math.random() * size);
-
-	const remapped = new Float32Array(uv.count * 2);
-
-	for (let i = 0; i < uv.count; i++) {
-		remapped[i * 2] = (uv.getX(i) + cellX) / size;
-		remapped[i * 2 + 1] = (uv.getY(i) + cellY) / size;
+	const faces = [
+		[2, row + 1],
+		[0, row + 1],
+		[1, row],
+		[2, row],
+		[3, row + 1],
+		[1, row + 1],
+	];
+	for (let face = 0; face < faces.length; face++) {
+		const [u, v] = faces[face];
+		for (let corner = 0; corner < 4; corner++) {
+			const i = face * 4 + corner;
+			uv.setXY(i, (u + uv.getX(i)) / 64, 1 - (v + 1 - uv.getY(i)) / 64);
+		}
 	}
-
-	uv.set(remapped);
 	uv.needsUpdate = true;
-
+	geometry.translate(salt ? 0.25 : 0, salt ? 0.25 : 0, salt ? 0.75 : 1);
 	return geometry;
 }
 
 function croppedPlane(u0: number, u1: number, v0: number, v1: number): PlaneGeometry {
 	const geometry = new PlaneGeometry(1, 1);
+	setPlaneUVs(geometry, u0, u1, v0, v1);
+	return geometry;
+}
+
+function setPlaneUVs(geometry: PlaneGeometry, u0: number, u1: number, v0: number, v1: number): void {
 	const uv = geometry.attributes.uv as BufferAttribute;
 
 	const top = 1 - v0;
@@ -76,8 +88,12 @@ function croppedPlane(u0: number, u1: number, v0: number, v1: number): PlaneGeom
 	uv.setXY(2, u0, bottom);
 	uv.setXY(3, u1, bottom);
 	uv.needsUpdate = true;
+}
 
-	return geometry;
+function setSprite(geometry: PlaneGeometry, index: number): void {
+	const u = (index % 16) / 16;
+	const v = Math.floor(index / 16) / 16;
+	setPlaneUVs(geometry, u, u + 0.0624375, v, v + 0.0624375);
 }
 
 export class ParticleSystem extends Group {
@@ -85,7 +101,9 @@ export class ParticleSystem extends Group {
 
 	private readonly _popcornMaterial: MeshBasicMaterial;
 	private readonly _saltMaterial: MeshBasicMaterial;
-	private readonly _saltGeometry: PlaneGeometry;
+	private readonly _minecraftMaterial: MeshBasicMaterial;
+	private readonly _facingQuaternion = new Quaternion();
+	private readonly _inverseWorldQuaternion = new Quaternion();
 
 	constructor(textures?: ParticleTextures) {
 		super();
@@ -94,14 +112,23 @@ export class ParticleSystem extends Group {
 
 		this._popcornMaterial = new MeshBasicMaterial({
 			side: DoubleSide,
+			alphaTest: 0.01,
+			toneMapped: false,
 		});
 
 		this._saltMaterial = new MeshBasicMaterial({
 			side: DoubleSide,
-			transparent: true,
+			alphaTest: 0.01,
+			toneMapped: false,
 		});
 
-		this._saltGeometry = croppedPlane(0, 4 / 64, 0, 8 / 64);
+		this._minecraftMaterial = new MeshBasicMaterial({
+			side: DoubleSide,
+			transparent: true,
+			depthWrite: false,
+			alphaTest: 0.01,
+			toneMapped: false,
+		});
 
 		if (textures) {
 			this.setTextures(textures);
@@ -124,12 +151,25 @@ export class ParticleSystem extends Group {
 			this._saltMaterial.map = textures.salt;
 			this._saltMaterial.needsUpdate = true;
 		}
+
+		if (textures.minecraft) {
+			textures.minecraft.magFilter = NearestFilter;
+			textures.minecraft.minFilter = NearestFilter;
+			this._minecraftMaterial.map = textures.minecraft;
+			this._minecraftMaterial.needsUpdate = true;
+			for (const particle of this._particles) {
+				if (particle.behavior === "falling") continue;
+				const material = particle.mesh.material as MeshBasicMaterial;
+				material.map = textures.minecraft;
+				material.needsUpdate = true;
+			}
+		}
 	}
 
 	// This is for the `PopcornEmote` emote
 	spawnPopcorn(position: Vector3, count = 1, motionY = 0.1 * SIXTEEN): void {
 		for (let i = 0; i < count; i++) {
-			const geometry = rngPalette(16);
+			const geometry = kernelGeometry(2 + Math.floor(Math.random() * 2) * 2);
 			const mesh = new Mesh(geometry, this._popcornMaterial);
 
 			const velocity = new Vector3(
@@ -139,7 +179,7 @@ export class ParticleSystem extends Group {
 			);
 
 			this._addParticle(mesh, position, velocity, {
-				gravity: GRAVITY,
+				gravity: GRAVITY * 0.5,
 				baseScale: SCALE_POPCORN,
 				billboard: false,
 				ownsMaterial: false,
@@ -150,20 +190,70 @@ export class ParticleSystem extends Group {
 	// This is for the `PureSaltEmote` emote
 	spawnSalt(position: Vector3, count = 1, motionY = 0): void {
 		for (let i = 0; i < count; i++) {
-			const mesh = new Mesh(this._saltGeometry, this._saltMaterial);
+			const mesh = new Mesh(kernelGeometry(0, true), this._saltMaterial);
 
 			const velocity = new Vector3(Math.random() * 0.05 * SIXTEEN, motionY, Math.random() * 0.05 * SIXTEEN);
 
 			this._addParticle(mesh, position, velocity, {
-				gravity: GRAVITY,
+				gravity: GRAVITY * 0.5,
 				baseScale: SCALE_SALT,
-				billboard: true,
+				billboard: false,
 				ownsMaterial: false,
 			});
 		}
 	}
 
-	// This is for the `StarPower` emote
+	spawnEnchantment(position: Vector3, count = 15): void {
+		for (let i = 0; i < count; i++) {
+			const material = this._minecraftMaterial.clone();
+			const brightness = Math.random() * 0.6 + 0.4;
+			material.color.setRGB(brightness * 0.9, brightness * 0.9, brightness);
+			const geometry = croppedPlane(0, 1, 0, 1);
+			setSprite(geometry, 225 + Math.floor(Math.random() * 26));
+			const velocity = new Vector3(jitter(0.025 * SIXTEEN), jitter(0.025 * SIXTEEN), jitter(0.025 * SIXTEEN));
+			this._addParticle(new Mesh(geometry, material), position, velocity, {
+				gravity: 0,
+				baseScale: (Math.random() * 0.5 + 0.2) * 0.2 * SIXTEEN,
+				billboard: true,
+				ownsMaterial: true,
+				behavior: "enchantment",
+				maxAge: 30 + Math.floor(Math.random() * 10),
+			});
+		}
+	}
+
+	spawnSpell(position: Vector3, color: ColorRepresentation, count = 7): void {
+		for (let i = 0; i < count; i++) {
+			const material = this._minecraftMaterial.clone();
+			material.color.set(color);
+			const geometry = croppedPlane(0, 1, 0, 1);
+			setSprite(geometry, 128);
+			const velocity = new Vector3(
+				jitter(0.5) + jitter(0.4),
+				material.color.g + jitter(0.4),
+				jitter(0.5) + jitter(0.4)
+			);
+			velocity.normalize().multiplyScalar((Math.random() + Math.random() + 1) * 0.15 * 0.4);
+			velocity.y = (velocity.y + 0.1) * 0.2;
+			if (material.color.r === 0 && material.color.b === 0) {
+				velocity.x *= 0.1;
+				velocity.z *= 0.1;
+			}
+			velocity.multiplyScalar(SIXTEEN);
+			const origin = position
+				.clone()
+				.add(new Vector3(jitter(0.025 * SIXTEEN), jitter(0.025 * SIXTEEN), jitter(0.025 * SIXTEEN)));
+			this._addParticle(new Mesh(geometry, material), origin, velocity, {
+				gravity: -0.004 * SIXTEEN,
+				baseScale: (Math.random() + 1) * 0.75 * 0.2 * SIXTEEN,
+				billboard: true,
+				ownsMaterial: true,
+				behavior: "spell",
+				maxAge: Math.floor(8 / (Math.random() * 0.8 + 0.2)),
+			});
+		}
+	}
+
 	spawnPuff(
 		position: Vector3,
 		kind: "cloud" | "tear" | "crumb" | "sparkle",
@@ -191,10 +281,10 @@ export class ParticleSystem extends Group {
 				kind === "tear"
 					? new Vector3(jitter(0.02 * SIXTEEN), -1 * SIXTEEN, jitter(0.02 * SIXTEEN))
 					: new Vector3(
-							jitter(0.05 * SIXTEEN),
-							kind === "cloud" ? -0.025 * SIXTEEN : jitter(0.05 * SIXTEEN),
-							jitter(0.05 * SIXTEEN)
-						);
+						jitter(0.05 * SIXTEEN),
+						kind === "cloud" ? -0.025 * SIXTEEN : jitter(0.05 * SIXTEEN),
+						jitter(0.05 * SIXTEEN)
+					);
 
 			this._addParticle(mesh, position, velocity, {
 				gravity: kind === "sparkle" || kind === "cloud" ? 0 : GRAVITY * 0.3,
@@ -214,9 +304,11 @@ export class ParticleSystem extends Group {
 			baseScale: number;
 			billboard: boolean;
 			ownsMaterial: boolean;
+			behavior?: Particle["behavior"];
+			maxAge?: number;
 		}
 	): void {
-		mesh.position.copy(position);
+		mesh.position.copy(this.worldToLocal(position.clone()));
 		mesh.scale.setScalar(options.baseScale);
 
 		this.add(mesh);
@@ -228,12 +320,15 @@ export class ParticleSystem extends Group {
 			baseScale: options.baseScale,
 			billboard: options.billboard,
 			ownsMaterial: options.ownsMaterial,
+			behavior: options.behavior ?? "falling",
+			origin: mesh.position.clone(),
 			age: 0,
 
 			// 20 + rand(10) ticks, matching EntityFX's
 			// particleMaxAge in the Java source.
-			maxAge: 20 + Math.floor(Math.random() * 10),
+			maxAge: options.maxAge ?? 20 + Math.floor(Math.random() * 10),
 		});
+		if (options.behavior === "enchantment") mesh.position.add(velocity);
 	}
 
 	update(deltaSeconds: number, facing?: Object3D): void {
@@ -242,6 +337,10 @@ export class ParticleSystem extends Group {
 		}
 
 		const ticks = deltaSeconds * TICK_RATE;
+		if (facing) {
+			this.getWorldQuaternion(this._inverseWorldQuaternion).invert();
+			facing.getWorldQuaternion(this._facingQuaternion).premultiply(this._inverseWorldQuaternion);
+		}
 
 		for (let i = this._particles.length - 1; i >= 0; i--) {
 			const particle = this._particles[i];
@@ -268,17 +367,34 @@ export class ParticleSystem extends Group {
 				continue;
 			}
 
-			particle.velocity.y -= particle.gravity * ticks;
-			particle.velocity.multiplyScalar(Math.pow(DRAG, ticks));
-			particle.mesh.position.addScaledVector(particle.velocity, ticks);
+			if (particle.behavior === "enchantment") {
+				const progress = particle.age / particle.maxAge;
+				particle.mesh.position.copy(particle.origin).addScaledVector(particle.velocity, 1 - progress);
+				particle.mesh.position.y -= Math.pow(progress, 4) * 1.2 * SIXTEEN;
+			} else {
+				const drag = particle.behavior === "spell" ? 0.96 : DRAG;
+				const damping = Math.pow(drag, ticks);
+				const travel = (1 - damping) / (1 - drag);
+				particle.mesh.position.addScaledVector(particle.velocity, travel);
+				particle.mesh.position.y -= (particle.gravity * (ticks - drag * travel)) / (1 - drag);
+				particle.velocity.multiplyScalar(damping);
+				particle.velocity.y -= particle.gravity * drag * travel;
+			}
+
+			if (particle.behavior === "spell") {
+				setSprite(
+					particle.mesh.geometry as PlaneGeometry,
+					128 + Math.max(0, 7 - Math.floor((particle.age * 8) / particle.maxAge))
+				);
+			}
 
 			const remaining = particle.maxAge - particle.age;
-			const fade = remaining < 5 ? clamp01(remaining / 5) : 1;
+			const fade = particle.behavior === "falling" && remaining < 5 ? clamp01(remaining / 5) : 1;
 
 			particle.mesh.scale.setScalar(particle.baseScale * fade);
 
 			if (particle.billboard && facing) {
-				particle.mesh.quaternion.copy(facing.quaternion);
+				particle.mesh.quaternion.copy(this._facingQuaternion);
 			}
 		}
 	}
